@@ -1,0 +1,173 @@
+import Foundation
+
+/// Keeping a Mac awake with the lid shut needs `pmset disablesleep`, which only root can run.
+/// A one-time sudoers rule lets this user run exactly four pmset commands without a password,
+/// nothing else. The rule lives in /etc/sudoers.d/doubleshot and can be removed from Settings.
+@MainActor
+enum LidHold {
+    static let ruleFile = "/etc/sudoers.d/doubleshot"
+
+    private static let allowedCommands = [
+        "/usr/bin/pmset -a disablesleep 1",
+        "/usr/bin/pmset -a disablesleep 0",
+        "/usr/bin/pmset -b lowpowermode 1",
+        "/usr/bin/pmset -b lowpowermode 0",
+    ]
+
+    /// Whether the sudoers rule is in place and allows every command we use.
+    static var isSetUp: Bool {
+        allows(["-a", "disablesleep", "1"]) && allows(["-b", "lowpowermode", "1"])
+    }
+
+    private static func allows(_ arguments: [String]) -> Bool {
+        Shell.run("/usr/bin/sudo", ["-n", "-l", "/usr/bin/pmset"] + arguments).status == 0
+    }
+
+    // MARK: - State that must survive a crash
+
+    /// Flag files, so a watchdog shell (and the next launch) know what to undo.
+    private static let stateFolder: URL = {
+        let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("DoubleShot", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
+    }()
+    private static let sleepFlag = stateFolder.appendingPathComponent("sleep-disabled")
+    private static let lowPowerFlag = stateFolder.appendingPathComponent("low-power-forced")
+
+    static var sleepDisabledByUs: Bool {
+        get { FileManager.default.fileExists(atPath: sleepFlag.path) }
+        set { setFlag(sleepFlag, newValue) }
+    }
+
+    static var lowPowerForcedByUs: Bool {
+        get { FileManager.default.fileExists(atPath: lowPowerFlag.path) }
+        set { setFlag(lowPowerFlag, newValue) }
+    }
+
+    private static func setFlag(_ url: URL, _ on: Bool) {
+        if on {
+            FileManager.default.createFile(atPath: url.path, contents: Data())
+        } else {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
+    // MARK: - pmset
+
+    @discardableResult
+    static func setSleepDisabled(_ disabled: Bool) -> Bool {
+        let result = Shell.run("/usr/bin/sudo", ["-n", "/usr/bin/pmset", "-a", "disablesleep", disabled ? "1" : "0"])
+        Log.lid.notice("disablesleep \(disabled ? 1 : 0) exited with \(result.status)")
+        guard result.status == 0 else { return false }
+        sleepDisabledByUs = disabled
+        disabled ? startWatchdog() : stopWatchdog()
+        return true
+    }
+
+    /// Only the battery profile is touched, so the user's own settings for power adapter stay as they are.
+    @discardableResult
+    static func setLowPowerMode(_ enabled: Bool) -> Bool {
+        let result = Shell.run("/usr/bin/sudo", ["-n", "/usr/bin/pmset", "-b", "lowpowermode", enabled ? "1" : "0"])
+        Log.lid.notice("lowpowermode \(enabled ? 1 : 0) exited with \(result.status)")
+        guard result.status == 0 else { return false }
+        lowPowerForcedByUs = enabled
+        enabled ? startWatchdog() : stopWatchdog()
+        return true
+    }
+
+    /// Undo whatever an earlier run left behind, for example after a crash.
+    static func cleanUpLeftovers() {
+        if sleepDisabledByUs, setSleepDisabled(false) { Log.lid.notice("Cleaned up sleep left disabled by an earlier run") }
+        if lowPowerForcedByUs { setLowPowerMode(false) }
+    }
+
+    // MARK: - Watchdog
+
+    /// A tiny shell that outlives us. If Double Shot is killed (Force Quit, crash, kill -9) it turns
+    /// sleep back on, so a Mac is never left unable to sleep.
+    private static var watchdog: Process?
+
+    private static func startWatchdog() {
+        guard watchdog?.isRunning != true else { return }
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let script = """
+        while /bin/kill -0 \(pid) 2>/dev/null; do /bin/sleep 2; done
+        if [ -f "$1" ]; then /usr/bin/sudo -n /usr/bin/pmset -a disablesleep 0 && /bin/rm -f "$1"; fi
+        if [ -f "$2" ]; then /usr/bin/sudo -n /usr/bin/pmset -b lowpowermode 0 && /bin/rm -f "$2"; fi
+        """
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", script, "doubleshot-watchdog", sleepFlag.path, lowPowerFlag.path]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            watchdog = process
+        } catch {
+            Log.lid.error("Could not start the watchdog: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private static func stopWatchdog() {
+        // Still needed while either change is in place
+        guard !sleepDisabledByUs, !lowPowerForcedByUs else { return }
+        watchdog?.terminate()
+        watchdog = nil
+    }
+
+    // MARK: - Setup
+
+    enum SetupResult: Equatable {
+        case done, cancelled
+        case failed(String)
+    }
+
+    /// Asks for the admin password once (macOS dialog) and installs the rule.
+    static func install() -> SetupResult {
+        let user = NSUserName()
+        guard user.range(of: "^[A-Za-z0-9._-]+$", options: .regularExpression) != nil else {
+            return .failed("Your account name has characters a sudo rule can't use.")
+        }
+        let rule = "\(user) ALL=(root) NOPASSWD: " + allowedCommands.joined(separator: ", ")
+        // visudo checks the rule before it goes live, a broken sudoers file would lock sudo out
+        let script = """
+        set -e; TMP=$(/usr/bin/mktemp); trap '/bin/rm -f "$TMP"' EXIT; \
+        printf '%s\\n' '\(rule)' > "$TMP"; /usr/sbin/visudo -cf "$TMP"; \
+        /bin/mkdir -p -m 0755 /private/etc/sudoers.d; \
+        /usr/bin/install -m 0440 -o root -g wheel "$TMP" \(ruleFile); /usr/sbin/visudo -c
+        """
+        let result = runAsAdmin(script, prompt: "Double Shot needs your password once to keep your Mac awake with the lid closed.")
+        guard result == .done else { return result }
+        guard isSetUp else {
+            return .failed("The rule was added but sudo doesn't read /etc/sudoers.d on this Mac. Check that /etc/sudoers includes it.")
+        }
+        return .done
+    }
+
+    static func uninstall() -> SetupResult {
+        var script = "/usr/bin/pmset -a disablesleep 0; "
+        if lowPowerForcedByUs { script += "/usr/bin/pmset -b lowpowermode 0; " }
+        script += "/bin/rm -f \(ruleFile)"
+        let result = runAsAdmin(script, prompt: "Double Shot needs your password to remove its lid closed permission.")
+        if result == .done {
+            sleepDisabledByUs = false
+            lowPowerForcedByUs = false
+            stopWatchdog()
+        }
+        return result
+    }
+
+    private static func runAsAdmin(_ shell: String, prompt: String) -> SetupResult {
+        let escaped = { (text: String) in
+            text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        }
+        let source = "do shell script \"\(escaped(shell))\" with prompt \"\(escaped(prompt))\" with administrator privileges"
+        var error: NSDictionary?
+        NSAppleScript(source: source)?.executeAndReturnError(&error)
+        guard let error else { return .done }
+        if (error[NSAppleScript.errorNumber] as? Int) == -128 { return .cancelled }
+        Log.lid.error("Admin script failed: \(error, privacy: .public)")
+        return .failed("macOS didn't accept the change. Your account needs to be an admin.")
+    }
+}
