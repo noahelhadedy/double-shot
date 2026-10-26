@@ -2,9 +2,13 @@ import SwiftUI
 
 /// The hero of the panel: a shot glass whose espresso level is the time left.
 /// Drag up on it to pour a duration, tap it to switch on or off. It steams while agents work.
-struct EspressoGlass: View {
-    /// 0 empty ... 1 full.
+struct EspressoGlass: View, @preconcurrency Animatable {
+    /// 0 empty ... 1 full. Animatable, so the coffee pours in and drains instead of jumping.
     var level: Double
+    var animatableData: Double {
+        get { level }
+        set { level = newValue }
+    }
     var isSteaming: Bool
     /// Shown inside the glass while pouring.
     var pourLabel: String?

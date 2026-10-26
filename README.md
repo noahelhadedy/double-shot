@@ -1,16 +1,11 @@
 <p align="center">
-  <img src="docs/icon.png" width="160" alt="Double Shot icon">
-</p>
-
-<h1 align="center">Double Shot</h1>
-
-<p align="center">
-  Keeps your Mac awake. With the lid closed too, and for as long as your AI agents are working.<br>
-  A small menu bar app for macOS 14 and later. Free and open source.
+  <img src="docs/hero.jpg" alt="Double Shot: keeps your Mac awake, with the lid closed too, and for as long as your AI agents are working">
 </p>
 
 <p align="center">
   <a href="https://github.com/noahelhadedy/double-shot/releases/latest"><b>Download</b></a>
+  &nbsp;·&nbsp;
+  <code>brew install --cask noahelhadedy/tap/double-shot</code>
   &nbsp;·&nbsp;
   <a href="https://noahelhadedy.com">Made by Noah Elhadedy</a>
 </p>
@@ -33,7 +28,15 @@ It still does the simple thing too: keep your Mac awake for a while, or until yo
 
 The first time you open Double Shot, a short welcome walks you through everything it needs, one step at a time: open at login, lid closed mode (your password once), and AI agents. Skip anything you like and turn it on later. You can see the welcome again from Settings > About.
 
+<p align="center">
+  <img src="docs/welcome.png" width="480" alt="The welcome window, step two: open at login">
+</p>
+
 ## Using it
+
+<p align="center">
+  <img src="docs/demo.gif" width="412" alt="The panel: pick 30 minutes and the glass fills, pick until you turn it off, then off and it drains">
+</p>
 
 The mug in the menu bar is empty when Double Shot is off and full when it's keeping your Mac awake.
 
@@ -49,9 +52,17 @@ Option click the mug to switch it on or off without opening the panel. You can s
 
 ## Install
 
+With [Homebrew](https://brew.sh), one line and it's ready to open:
+
+```sh
+brew install --cask noahelhadedy/tap/double-shot
+```
+
+Or by hand:
+
 1. Download `DoubleShot-x.y.z.zip` from [Releases](https://github.com/noahelhadedy/double-shot/releases/latest) and unzip it.
 2. Move **Double Shot.app** to your Applications folder.
-3. Open it. The app isn't notarized by Apple yet, so macOS blocks it the first time. Go to **System Settings > Privacy & Security**, scroll down and click **Open Anyway**. Or run:
+3. Open it. The app isn't notarized by Apple yet, so the first time macOS says it "could not verify Double Shot is free of malware". Click **Done**, not Move to Trash. Then go to **System Settings > Privacy & Security**, scroll down, click **Open Anyway** and enter your password. You only do this once. Or run:
 
    ```sh
    xattr -dr com.apple.quarantine "/Applications/Double Shot.app"

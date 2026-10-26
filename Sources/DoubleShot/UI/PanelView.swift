@@ -37,6 +37,7 @@ struct PanelView: View {
             HStack(spacing: 14) {
                 EspressoGlass(level: glassLevel, isSteaming: engine.isHeldForAgents && pourIndex == nil,
                               pourLabel: pourLabel, isAnimated: !reduceMotion)
+                    .animation(reduceMotion ? nil : .spring(duration: 0.9, bounce: 0.12), value: glassLevel)
                     .frame(width: 104, height: Self.glassHeight)
                     .contentShape(Rectangle())
                     .gesture(pourGesture)
