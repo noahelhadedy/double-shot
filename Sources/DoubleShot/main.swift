@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let engine = AwakeEngine()
     private var statusItem: StatusItemController?
     private lazy var settings = SettingsWindowController(engine: engine)
+    private var welcome: WelcomeWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Two copies would fight over the same sleep setting, so the second one bows out
@@ -20,6 +21,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         engine.onChange = { [weak self] in self?.statusItem?.refresh() }
         engine.start()
+        if !engine.prefs.welcomeDone { showWelcome() }
+    }
+
+    func showWelcome(at step: WelcomeView.Step = .hello) {
+        welcome?.close()
+        welcome = WelcomeWindowController(engine: engine, startAt: step) { [weak self] openPanel in
+            self?.engine.prefs.welcomeDone = true
+            self?.welcome = nil
+            if openPanel { self?.statusItem?.showPanel() }
+        }
+        welcome?.show()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -37,6 +49,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case "off": engine.turnOff()
             case "toggle": engine.toggle()
             case "panel": statusItem?.showPanel()
+            case "welcome":
+                let step = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                    .queryItems?.first { $0.name == "step" }?.value.flatMap(WelcomeView.Step.init(rawValue:))
+                showWelcome(at: step ?? .hello)
             case "settings":
                 let tab = URLComponents(url: url, resolvingAgainstBaseURL: false)?
                     .queryItems?.first { $0.name == "tab" }?.value.flatMap(SettingsTab.init(rawValue:))

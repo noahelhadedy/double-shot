@@ -29,6 +29,10 @@ Double Shot handles both:
 
 It still does the simple thing too: keep your Mac awake for a while, or until you turn it off.
 
+## First run
+
+The first time you open Double Shot, a short welcome walks you through everything it needs, one step at a time: open at login, lid closed mode (your password once), and AI agents. Skip anything you like and turn it on later. You can see the welcome again from Settings > About.
+
 ## Using it
 
 The mug in the menu bar is empty when Double Shot is off and full when it's keeping your Mac awake.
@@ -74,6 +78,7 @@ With an external display connected, a closed lid is a normal desk setup, so the 
 - The next time it opens, it also undoes anything an earlier run left behind.
 - Heat: it stops when the Mac gets hot, and at the first warm level when the lid is closed in a bag.
 - Battery: it stops at 20% on battery by default (Settings > Safety).
+- Updates: once a day it asks GitHub whether a newer version is out and shows a small note in the panel. Nothing about your Mac is sent. Turn it off in Settings > General.
 
 ## If your Mac won't sleep
 
@@ -124,6 +129,7 @@ open -g "doubleshot://off"
 open -g "doubleshot://toggle"
 open -g "doubleshot://panel"           # open the panel
 open -g "doubleshot://settings"        # open Settings
+open -g "doubleshot://welcome"         # show the welcome again
 ```
 
 ## Build from source

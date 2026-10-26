@@ -21,6 +21,8 @@ final class Preferences {
         static let batteryGuard = "batteryGuard"
         static let batteryGuardPercent = "batteryGuardPercent"
         static let heatGuard = "heatGuard"
+        static let welcomeDone = "welcomeDone"
+        static let checkForUpdates = "checkForUpdates"
     }
 
     private init() {
@@ -36,6 +38,8 @@ final class Preferences {
             Key.batteryGuard: true,
             Key.batteryGuardPercent: 20,
             Key.heatGuard: true,
+            Key.welcomeDone: false,
+            Key.checkForUpdates: true,
         ])
         keepDisplayOn = defaults.bool(forKey: Key.keepDisplayOn)
         defaultMinutes = defaults.integer(forKey: Key.defaultMinutes)
@@ -53,6 +57,8 @@ final class Preferences {
         batteryGuard = defaults.bool(forKey: Key.batteryGuard)
         batteryGuardPercent = defaults.integer(forKey: Key.batteryGuardPercent)
         heatGuard = defaults.bool(forKey: Key.heatGuard)
+        welcomeDone = defaults.bool(forKey: Key.welcomeDone)
+        checkForUpdates = defaults.bool(forKey: Key.checkForUpdates)
     }
 
     /// Fired after any setting changes, so the engine can re-check its state.
@@ -77,6 +83,11 @@ final class Preferences {
     var batteryGuard: Bool { didSet { save(batteryGuard, Key.batteryGuard) } }
     var batteryGuardPercent: Int { didSet { save(batteryGuardPercent, Key.batteryGuardPercent) } }
     var heatGuard: Bool { didSet { save(heatGuard, Key.heatGuard) } }
+
+    // First run and updates
+    var welcomeDone: Bool { didSet { save(welcomeDone, Key.welcomeDone) } }
+    /// Asks GitHub once a day whether a newer version is out. Nothing else is sent.
+    var checkForUpdates: Bool { didSet { save(checkForUpdates, Key.checkForUpdates) } }
 
     private func save(_ value: Any, _ key: String) {
         defaults.set(value, forKey: key)

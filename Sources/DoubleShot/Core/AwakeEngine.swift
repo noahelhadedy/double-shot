@@ -33,6 +33,7 @@ final class AwakeEngine {
     var isAwake: Bool { isManualOn || isHeldForAgents }
 
     let agents = AgentMonitor()
+    let updates = UpdateChecker()
     let prefs = Preferences.shared
 
     /// Fired whenever anything visible changed, for the menu bar icon.
@@ -156,6 +157,7 @@ final class AwakeEngine {
 
     func update() {
         if prefs.agentMode { agents.start() } else { agents.stop() }
+        if prefs.checkForUpdates { updates.start() } else { updates.stop() }
         updateAgentHold()
 
         if isAwake, isTooHot {

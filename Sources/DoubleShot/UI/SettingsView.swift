@@ -49,6 +49,7 @@ struct GeneralSettingsView: View {
                     }
                 ))
                 Toggle("Turn on when Double Shot opens", isOn: $prefs.turnOnAtLaunch)
+                Toggle("Tell me when a new version is out", isOn: $prefs.checkForUpdates)
             } footer: {
                 if let loginMessage {
                     HStack {
@@ -289,6 +290,10 @@ struct AboutView: View {
                 }
             }
             .padding(.top, 4)
+            Button("Show the Welcome Again") {
+                if let url = URL(string: "doubleshot://welcome") { NSWorkspace.shared.open(url) }
+            }
+            .buttonStyle(.link)
             Text("Free and open source under the MIT License.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)

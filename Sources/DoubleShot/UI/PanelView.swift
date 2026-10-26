@@ -20,6 +20,9 @@ struct PanelView: View {
                 CutoffBanner(cutoff: cutoff)
             }
             modes
+            if let version = engine.updates.newVersion {
+                UpdateBanner(version: version, page: engine.updates.releasePage)
+            }
             footer
         }
         .padding(12)
@@ -374,5 +377,29 @@ private struct CutoffBanner: View {
         .font(.callout)
         .padding(10)
         .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+private struct UpdateBanner: View {
+    let version: String
+    let page: URL
+
+    var body: some View {
+        Button {
+            NSWorkspace.shared.open(page)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.down.circle.fill").foregroundStyle(Theme.cremaInk)
+                Text("Version \(version) is out")
+                Spacer(minLength: 0)
+                Text("Get it").foregroundStyle(.secondary)
+                Image(systemName: "arrow.up.right").imageScale(.small).foregroundStyle(.secondary)
+            }
+            .font(.callout)
+            .padding(10)
+            .background(.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
