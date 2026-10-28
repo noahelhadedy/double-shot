@@ -1,6 +1,6 @@
 # Contributing
 
-Pull requests are welcome, especially new agents in `Sources/DoubleShot/Agents/AgentKind.swift`.
+Pull requests are welcome, especially new agents in `Sources/DoubleShot/Agents/AgentKind.swift`. Add their command lines to `Tests/DoubleShotTests/AgentKindTests.swift` too.
 
 ## Where things live
 
@@ -15,6 +15,8 @@ Pull requests are welcome, especially new agents in `Sources/DoubleShot/Agents/A
 - Anything that disables sleep must be undone on every exit path: quit, signals (routed through `NSApp.terminate` in `main.swift`), and crashes (the watchdog plus the cleanup at launch).
 
 ## Build and test
+
+`swift test` runs the unit tests. They need no password and never change how the Mac sleeps.
 
 `scripts/build-app.sh` builds the universal app into `dist/`. Quit the installed copy first. Test the lid paths on battery with no external display: close the lid while an agent works, open it, let the agent finish, and check `pmset -g | grep -i sleepdisabled` reads 0 afterwards.
 

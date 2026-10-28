@@ -84,7 +84,8 @@ final class AgentMonitor {
         timer.tolerance = 1
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
-        // The first check only takes a CPU baseline, so it never reports work
+        // The first check has no CPU baseline yet, so CPU only counts from the second one on. A
+        // running tool call or a background run counts right away.
         DispatchQueue.main.async { [weak self] in self?.check() }
     }
 

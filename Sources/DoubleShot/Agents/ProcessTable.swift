@@ -82,25 +82,33 @@ struct ProcessTable {
         guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return nil }
         var buffer = [UInt8](repeating: 0, count: size)
         guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else { return nil }
+        return parseArguments(Array(buffer.prefix(size)))
+    }
 
-        // Layout: argc, exec path, padding zeros, argv[0], argv[1]...
-        let argc = buffer.withUnsafeBytes { $0.load(as: Int32.self) }
+    /// Layout: argc, exec path, padding zeros, argv[0], argv[1]..., then the environment. Every
+    /// argument ends with one zero byte, so an empty one is a lone zero and only argc of them are
+    /// read. A process that rewrote its title (node's process.title) left zeros where its arguments
+    /// were, which read as empty arguments. Two cases stay ambiguous, as they were before: an empty
+    /// argv[0] looks like padding, and a title that fills all of the old arguments' space leaves no
+    /// zeros, so the environment follows.
+    static func parseArguments(_ buffer: [UInt8]) -> [String]? {
+        let size = buffer.count
+        guard size > MemoryLayout<Int32>.size else { return nil }
+        let argc = Int(buffer.withUnsafeBytes { $0.loadUnaligned(as: Int32.self) })
+        guard argc >= 0 else { return nil }
         var index = MemoryLayout<Int32>.size
-        func nextString() -> String? {
-            while index < size && buffer[index] == 0 { index += 1 }
-            guard index < size else { return nil }
+        // Up to the next zero byte, and past it
+        func nextString() -> String {
             let start = index
             while index < size && buffer[index] != 0 { index += 1 }
+            defer { index += 1 }
             return String(decoding: buffer[start..<index], as: UTF8.self)
         }
         _ = nextString() // exec path
+        while index < size && buffer[index] == 0 { index += 1 }
         var arguments: [String] = []
-        for number in 0..<argc {
-            // Arguments are split by one zero byte. A run of zeros after argv[0] means the process
-            // rewrote its title (node's process.title) and what follows is the environment.
-            if number > 0, index + 1 < size, buffer[index] == 0, buffer[index + 1] == 0 { break }
-            guard let argument = nextString() else { break }
-            arguments.append(argument)
+        while arguments.count < argc && index < size {
+            arguments.append(nextString())
         }
         return arguments
     }

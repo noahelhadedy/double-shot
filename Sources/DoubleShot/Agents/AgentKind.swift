@@ -90,11 +90,20 @@ struct AgentKind: Hashable, Sendable {
     }
 
     /// The agent's own arguments: what comes after the script (`node cli.js`, `python -m aider`),
-    /// or after the binary itself.
+    /// or after the binary itself. The agent's own binary has no script, so there a folder named
+    /// like the agent (`--add-dir ~/src/claude`) stays an argument.
     private func ownArguments(_ arguments: [String]) -> [String] {
         let rest = arguments.dropFirst()
+        if let first = arguments.first, isOwnBinary(first) { return Array(rest) }
         guard let script = rest.prefix(4).firstIndex(where: isAgentArgument) else { return Array(rest) }
         return Array(rest[(script + 1)...])
+    }
+
+    /// `claude`, `.../codex`, `.../claude/versions/2.1.3`, but not Cursor's bundled `.../versions/<v>/node`.
+    private func isOwnBinary(_ path: String) -> Bool {
+        let name = (path as NSString).lastPathComponent
+        guard !AgentKind.isInterpreter(name) else { return false }
+        return executables.contains(name) || versionFolders.contains { path.contains($0) }
     }
 
     /// A one-shot run works until it exits. The desktop apps talk to their sessions over
