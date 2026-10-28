@@ -120,7 +120,7 @@ struct LidSettingsView: View {
                         }
                     } else {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("macOS always sleeps when you close the lid. To keep working, Double Shot needs your password once.")
+                            Text("Without an external display, macOS sleeps when you close the lid. To keep working, Double Shot needs your password once.")
                             Text("It adds one rule to /etc/sudoers.d that lets it switch sleep and Low Power Mode on and off. Nothing else.")
                                 .foregroundStyle(.secondary)
                             HStack {

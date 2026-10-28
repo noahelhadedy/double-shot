@@ -21,13 +21,14 @@ enum LidHold {
     static var isSetUp: Bool {
         let listing = Shell.run("/usr/bin/sudo", ["-n", "-l"])
         guard listing.status == 0 else { return false }
-        let allowed = passwordFreeCommands(in: listing.output)
-        return allowedCommands.allSatisfy(allowed.contains)
+        return allowedCommands.allSatisfy(passwordFree(in: listing.output).contains)
     }
 
-    /// Commands listed after a NOPASSWD tag in `sudo -l` output, entries like
+    /// Which of our commands `sudo -l` output lets run as root without a password, from entries like
     /// "(root) NOPASSWD: /usr/bin/pmset -a disablesleep 1, /usr/bin/pmset -a disablesleep 0".
-    static func passwordFreeCommands(in listing: String) -> Set<String> {
+    /// sudo goes by the last entry that matches, so a later rule that asks for a password (a company
+    /// "(ALL) ALL" in a file sorted after ours) takes it away again.
+    static func passwordFree(in listing: String) -> Set<String> {
         // An entry starts with its runas list in parentheses; longer ones may wrap onto more lines
         var entries: [String] = []
         for line in listing.components(separatedBy: .newlines) {
@@ -38,17 +39,36 @@ enum LidHold {
                 entries[entries.count - 1] += " " + trimmed
             }
         }
-        var commands: Set<String> = []
+        var free: Set<String> = []
         for entry in entries {
-            guard let tag = entry.range(of: "NOPASSWD:") else { continue }
-            for item in entry[tag.upperBound...].split(separator: ",") {
-                let command = item.trimmingCharacters(in: .whitespaces)
-                // Another tag (PASSWD:, SETENV:) changes the rules for what follows
-                if command.contains(":") { break }
-                commands.insert(command)
+            guard let close = entry.firstIndex(of: ")") else { continue }
+            // "(root)", "(ALL)", "(ALL : ALL)": only rules that run commands as root count
+            let runAs = entry[entry.index(after: entry.startIndex)..<close].split(separator: ":").first ?? ""
+            let users = runAs.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            guard users.contains("root") || users.contains("ALL") else { continue }
+
+            var noPassword = false
+            for item in entry[entry.index(after: close)...].split(separator: ",") {
+                var command = item.trimmingCharacters(in: .whitespaces)
+                // Tags (NOPASSWD:, PASSWD:, SETENV:) come before a command and carry on to the next ones
+                while let colon = command.firstIndex(of: ":"),
+                      command[..<colon].allSatisfy({ $0.isUppercase || $0 == "_" }) {
+                    let tag = command[..<colon]
+                    if tag == "NOPASSWD" { noPassword = true } else if tag == "PASSWD" { noPassword = false }
+                    command = command[command.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+                }
+                for wanted in allowedCommands where covers(command, wanted) {
+                    if noPassword { free.insert(wanted) } else { free.remove(wanted) }
+                }
             }
         }
-        return commands
+        return free
+    }
+
+    /// A sudoers command also matches with no arguments listed (any arguments), a trailing *, or ALL.
+    private static func covers(_ rule: String, _ command: String) -> Bool {
+        rule == "ALL" || rule == command || rule == "/usr/bin/pmset"
+            || (rule.hasSuffix("*") && command.hasPrefix(rule.dropLast()))
     }
 
     // MARK: - State that must survive a crash

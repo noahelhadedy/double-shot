@@ -84,6 +84,7 @@ final class AgentMonitor {
         timer.tolerance = 1
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
+        trackRecentLogFiles()
         // The first check only takes a CPU baseline, so it never reports work
         DispatchQueue.main.async { [weak self] in self?.check() }
     }
@@ -97,6 +98,26 @@ final class AgentMonitor {
         isAnyWorking = false
         lastCPU = [:]
         lastCheckAt = nil
+        // Writes made while stopped aren't news when it starts again
+        trackedFiles = [:]
+    }
+
+    /// Files agents already had open before we started (after an update, or turning agents back on):
+    /// FSEvents won't mention them until they're closed, so look for recently changed ones once.
+    private func trackRecentLogFiles() {
+        let since = Date().addingTimeInterval(-Self.trackedFileLifetime)
+        for kind in AgentKind.all {
+            for folder in logFolders(of: kind) {
+                guard let files = FileManager.default.enumerator(at: URL(fileURLWithPath: folder),
+                                                                 includingPropertiesForKeys: [.contentModificationDateKey],
+                                                                 options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { continue }
+                for case let file as URL in files where kind.logSuffixes.contains(where: file.path.hasSuffix) {
+                    guard let modified = try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+                          modified > since else { continue }
+                    trackedFiles[file.path] = modified
+                }
+            }
+        }
     }
 
     private func logFolders(of kind: AgentKind) -> [String] {
@@ -140,7 +161,8 @@ final class AgentMonitor {
             }
             guard modified > seen else { continue }
             trackedFiles[path] = modified
-            for owner in owners(of: path) { recordWrite(of: owner.kind, folder: owner.folder, path: path, at: now) }
+            // When the file changed, not when we noticed (the first check after a wake can be late)
+            for owner in owners(of: path) { recordWrite(of: owner.kind, folder: owner.folder, path: path, at: min(modified, now)) }
         }
     }
 
@@ -149,7 +171,8 @@ final class AgentMonitor {
     /// a letter or digit as a dash, and cuts names over 200 characters, adding a short hash.
     private func projectLogFolder(of kind: AgentKind, pid: pid_t) -> String? {
         guard kind.logsPerProject, let directory = Self.workingDirectory(of: pid) else { return nil }
-        let name = String(directory.utf16.map { unit -> Character in
+        // Claude uses the composed form (é as one character); paths made by Finder come decomposed
+        let name = String(directory.precomposedStringWithCanonicalMapping.utf16.map { unit -> Character in
             switch unit {
             case 0x30...0x39, 0x41...0x5A, 0x61...0x7A: Character(UnicodeScalar(UInt8(unit)))
             default: "-"
