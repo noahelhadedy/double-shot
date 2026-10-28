@@ -138,7 +138,8 @@ struct LidSettingsView: View {
                     }
                 }
                 Section {
-                    Toggle("Keep working with the lid closed", isOn: $prefs.lidClosed)
+                    // Shown off until it's set up, so it never looks on while it can't work
+                    Toggle("Keep working with the lid closed", isOn: engine.isLidSetUp ? $prefs.lidClosed : .constant(false))
                     Toggle("Use Low Power Mode while the lid is closed", isOn: $prefs.lowPowerWhileClosed)
                 } footer: {
                     Text("Works for your own sessions and for AI agents. With the lid closed the display goes dark right away, and when the work is done Double Shot puts your Mac to sleep. While it's held, Apple menu > Sleep does nothing, so use Sleep Now in the panel. With an external display connected, a closed lid is a normal desk setup and these rules step aside.")
@@ -291,7 +292,7 @@ struct AboutView: View {
             }
             .padding(.top, 4)
             Button("Show the Welcome Again") {
-                if let url = URL(string: "doubleshot://welcome") { NSWorkspace.shared.open(url) }
+                (NSApp.delegate as? AppDelegate)?.showWelcome()
             }
             .buttonStyle(.link)
             Text("Free and open source under the MIT License.")

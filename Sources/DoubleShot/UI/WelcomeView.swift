@@ -118,7 +118,7 @@ struct WelcomeView: View {
         case .agents:
             VStack(alignment: .leading, spacing: 18) {
                 StepText(title: "Stay awake for AI agents",
-                         text: "When Claude Code, Codex or another agent is working, your Mac stays awake by itself, lid closed too. Sessions that are just open and waiting don't count.")
+                         text: "When Claude Code, Codex or another agent is working, your Mac stays awake by itself\(engine.isLidSetUp ? ", lid closed too" : ""). Sessions that are just open and waiting don't count.")
                 Toggle("Stay awake while AI agents work", isOn: $prefs.agentMode)
                     .toggleStyle(.switch)
                     .tint(Theme.crema)

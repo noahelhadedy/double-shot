@@ -241,7 +241,8 @@ struct PanelView: View {
 
     private var lidDetail: String {
         guard engine.isLidSetUp else { return "Needs your password once." }
-        return lidOn ? "Close the lid and the work keeps going." : "Closing the lid puts your Mac to sleep."
+        guard lidOn else { return "Closing the lid puts your Mac to sleep." }
+        return engine.isAwake ? "Close the lid and the work keeps going." : "While it's on, closing the lid won't stop the work."
     }
 
     /// What agents mode is doing right now, in one plain line.
@@ -249,10 +250,10 @@ struct PanelView: View {
         guard prefs.agentMode else { return "Off. Agents won't keep your Mac awake." }
         let running = engine.agents.running
         guard !running.isEmpty else { return "None open. I'll stay up by myself once one starts working." }
-        if engine.isAgentHoldSuppressed { return "Paused by you until they finish." }
         if let cutoff = engine.lastCutoff, !engine.isAwake {
             return cutoff == .heat ? "Stopped because your Mac got warm." : "Stopped because the battery is low."
         }
+        if engine.isAgentHoldSuppressed { return "Paused by you until they finish." }
         let lidPart = lidOn ? ", lid closed too." : "."
         let background = running.reduce(0) { $0 + $1.backgroundRuns }
         if background > 0 {
@@ -384,17 +385,32 @@ private struct CutoffBanner: View {
 private struct UpdateBanner: View {
     let version: String
     let page: URL
+    @State private var copied = false
+
+    /// Installed with Homebrew: updating there keeps brew in sync and skips the Gatekeeper steps.
+    private static let isHomebrew = ["/opt/homebrew/Caskroom/double-shot", "/usr/local/Caskroom/double-shot"]
+        .contains { FileManager.default.fileExists(atPath: $0) }
 
     var body: some View {
         Button {
-            NSWorkspace.shared.open(page)
+            if Self.isHomebrew {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString("brew upgrade --cask double-shot", forType: .string)
+                copied = true
+            } else {
+                NSWorkspace.shared.open(page)
+            }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.down.circle.fill").foregroundStyle(Theme.cremaInk)
                 Text("Version \(version) is out")
                 Spacer(minLength: 0)
-                Text("Get it").foregroundStyle(.secondary)
-                Image(systemName: "arrow.up.right").imageScale(.small).foregroundStyle(.secondary)
+                if Self.isHomebrew {
+                    Text(copied ? "Copied, paste in Terminal" : "Copy brew upgrade").foregroundStyle(.secondary)
+                } else {
+                    Text("Get it").foregroundStyle(.secondary)
+                    Image(systemName: "arrow.up.right").imageScale(.small).foregroundStyle(.secondary)
+                }
             }
             .font(.callout)
             .padding(10)

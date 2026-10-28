@@ -14,9 +14,10 @@ enum LidHold {
         "/usr/bin/pmset -b lowpowermode 0",
     ]
 
-    /// Whether the sudoers rule is in place and allows every command we use.
+    /// Whether the sudoers rule is in place and allows every command we use, the "back on" ones first.
     static var isSetUp: Bool {
-        allows(["-a", "disablesleep", "1"]) && allows(["-b", "lowpowermode", "1"])
+        allows(["-a", "disablesleep", "0"]) && allows(["-a", "disablesleep", "1"])
+            && allows(["-b", "lowpowermode", "0"]) && allows(["-b", "lowpowermode", "1"])
     }
 
     private static func allows(_ arguments: [String]) -> Bool {
@@ -34,6 +35,7 @@ enum LidHold {
     }()
     private static let sleepFlag = stateFolder.appendingPathComponent("sleep-disabled")
     private static let lowPowerFlag = stateFolder.appendingPathComponent("low-power-forced")
+    private static let inBagFlag = stateFolder.appendingPathComponent("held-in-bag")
 
     static var sleepDisabledByUs: Bool {
         get { FileManager.default.fileExists(atPath: sleepFlag.path) }
@@ -43,6 +45,12 @@ enum LidHold {
     static var lowPowerForcedByUs: Bool {
         get { FileManager.default.fileExists(atPath: lowPowerFlag.path) }
         set { setFlag(lowPowerFlag, newValue) }
+    }
+
+    /// Held awake with the lid shut and no display: if we die now, the watchdog puts the Mac to sleep.
+    static var heldInBag: Bool {
+        get { FileManager.default.fileExists(atPath: inBagFlag.path) }
+        set { if newValue != heldInBag { setFlag(inBagFlag, newValue) } }
     }
 
     private static func setFlag(_ url: URL, _ on: Bool) {
@@ -57,11 +65,25 @@ enum LidHold {
 
     @discardableResult
     static func setSleepDisabled(_ disabled: Bool) -> Bool {
+        // Flag and watchdog go first, so a kill right after pmset still gets undone
+        if disabled {
+            sleepDisabledByUs = true
+            startWatchdog()
+        }
         let result = Shell.run("/usr/bin/sudo", ["-n", "/usr/bin/pmset", "-a", "disablesleep", disabled ? "1" : "0"])
         Log.lid.notice("disablesleep \(disabled ? 1 : 0) exited with \(result.status)")
-        guard result.status == 0 else { return false }
-        sleepDisabledByUs = disabled
-        disabled ? startWatchdog() : stopWatchdog()
+        guard result.status == 0 else {
+            if disabled {
+                sleepDisabledByUs = false
+                stopWatchdog()
+            }
+            return false
+        }
+        if !disabled {
+            sleepDisabledByUs = false
+            heldInBag = false
+            stopWatchdog()
+        }
         return true
     }
 
@@ -95,10 +117,11 @@ enum LidHold {
         while /bin/kill -0 \(pid) 2>/dev/null; do /bin/sleep 2; done
         if [ -f "$1" ]; then /usr/bin/sudo -n /usr/bin/pmset -a disablesleep 0 && /bin/rm -f "$1"; fi
         if [ -f "$2" ]; then /usr/bin/sudo -n /usr/bin/pmset -b lowpowermode 0 && /bin/rm -f "$2"; fi
+        if [ -f "$3" ]; then /bin/rm -f "$3"; if /usr/sbin/ioreg -r -k AppleClamshellState -d 1 | /usr/bin/grep -q '"AppleClamshellState" = Yes'; then /usr/bin/pmset sleepnow; fi; fi
         """
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", script, "doubleshot-watchdog", sleepFlag.path, lowPowerFlag.path]
+        process.arguments = ["-c", script, "doubleshot-watchdog", sleepFlag.path, lowPowerFlag.path, inBagFlag.path]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         do {
@@ -146,13 +169,15 @@ enum LidHold {
     }
 
     static func uninstall() -> SetupResult {
-        var script = "/usr/bin/pmset -a disablesleep 0; "
+        // Only undo what we changed, someone may have set disablesleep on purpose
+        var script = sleepDisabledByUs ? "/usr/bin/pmset -a disablesleep 0; " : ""
         if lowPowerForcedByUs { script += "/usr/bin/pmset -b lowpowermode 0; " }
         script += "/bin/rm -f \(ruleFile)"
         let result = runAsAdmin(script, prompt: "Double Shot needs your password to remove its lid closed permission.")
         if result == .done {
             sleepDisabledByUs = false
             lowPowerForcedByUs = false
+            heldInBag = false
             stopWatchdog()
         }
         return result

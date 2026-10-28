@@ -13,17 +13,14 @@ enum SystemState {
         return (value as? Bool) ?? false
     }
 
-    /// Any non built-in display that's connected.
+    /// Any non built-in display that's connected. A monitor in display sleep still counts:
+    /// it's a desk setup with a dark screen, not a Mac in a bag.
     static var hasExternalDisplay: Bool {
         var count: UInt32 = 0
         guard CGGetOnlineDisplayList(0, nil, &count) == .success, count > 0 else { return false }
         var displays = [CGDirectDisplayID](repeating: 0, count: Int(count))
         guard CGGetOnlineDisplayList(count, &displays, &count) == .success else { return false }
-        // Only a screen that's really on: not asleep, not mirroring the built-in one
-        return displays.prefix(Int(count)).contains { display in
-            CGDisplayIsBuiltin(display) == 0 && CGDisplayIsActive(display) != 0
-                && CGDisplayIsAsleep(display) == 0 && CGDisplayMirrorsDisplay(display) == kCGNullDirectDisplay
-        }
+        return displays.prefix(Int(count)).contains { CGDisplayIsBuiltin($0) == 0 }
     }
 
     /// Lid shut with no external display: the Mac is probably in a bag, not on a desk.

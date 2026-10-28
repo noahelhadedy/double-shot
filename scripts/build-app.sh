@@ -34,5 +34,6 @@ iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 codesign --force --options runtime --timestamp=none --sign "${SIGN_IDENTITY:--}" "$APP"
 codesign --verify --strict "$APP"
 
-(cd dist && ditto -c -k --keepParent "Double Shot.app" "DoubleShot-$VERSION.zip")
+# No extended attributes: as ._ files they break the signature for tools other than Archive Utility
+(cd dist && ditto -c -k --keepParent --norsrc --noextattr "Double Shot.app" "DoubleShot-$VERSION.zip")
 echo "Built $APP and dist/DoubleShot-$VERSION.zip"

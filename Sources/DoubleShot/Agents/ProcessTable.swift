@@ -95,7 +95,10 @@ struct ProcessTable {
         }
         _ = nextString() // exec path
         var arguments: [String] = []
-        for _ in 0..<argc {
+        for number in 0..<argc {
+            // Arguments are split by one zero byte. A run of zeros after argv[0] means the process
+            // rewrote its title (node's process.title) and what follows is the environment.
+            if number > 0, index + 1 < size, buffer[index] == 0, buffer[index + 1] == 0 { break }
             guard let argument = nextString() else { break }
             arguments.append(argument)
         }

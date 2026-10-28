@@ -40,6 +40,11 @@ final class AgentMonitor {
     private static let helperStartWindow: TimeInterval = 60
     private static let helperNames = ["Google Chrome", "Chromium", "chrome-headless-shell", "chrome", "Electron",
                                       "language-server", "tsserver", "sourcekit-lsp", "rust-analyzer", "gopls"]
+    /// Agents run their tool calls through a shell, servers are started directly. A shell is never a helper.
+    private static let shellNames: Set<String> = ["zsh", "bash", "sh", "fish", "dash", "ksh", "tcsh", "nu"]
+    /// A tool call that is still running counts as work even with no CPU (a docker build, a download,
+    /// `gh run watch`), up to this age; older ones are background servers left running.
+    private static let toolCallWindow: TimeInterval = 30 * 60
 
     /// A process is identified by pid plus start time, so a reused pid is never mixed up.
     private struct ProcessKey: Hashable {
@@ -90,7 +95,7 @@ final class AgentMonitor {
     /// Only session logs count, not memory notes or other files in those folders.
     private func noteWrite(at path: String) {
         guard path.hasSuffix(".jsonl") || path.hasSuffix(".json"), !path.contains("/memory/") else { return }
-        for kind in AgentKind.all where logFolders(of: kind).contains(where: { path.hasPrefix($0) }) {
+        for kind in AgentKind.all where logFolders(of: kind).contains(where: { path.hasPrefix($0 + "/") }) {
             lastLogWrite[kind.id] = Date()
         }
     }
@@ -122,6 +127,7 @@ final class AgentMonitor {
             let path = isInterpreter ? nil : Self.executablePath(of: entry.pid)
             let argv = isInterpreter ? arguments(entry) : nil
             for kind in AgentKind.all where kind.matches(name: entry.name, path: path, arguments: argv) {
+                if kind.isService(argv ?? arguments(entry)) { continue }
                 rootsByKind[kind.id, default: []].append(entry)
             }
         }
@@ -149,13 +155,17 @@ final class AgentMonitor {
                 // MCP servers start with the session, browsers and language servers by name; a long
                 // build started later still counts
                 let isHelper: (ProcessTable.Entry) -> Bool = { entry in
-                    entry.startTime - session.startTime < Self.helperStartWindow
+                    guard !Self.shellNames.contains(entry.name) else { return false }
+                    return entry.startTime - session.startTime < Self.helperStartWindow
                         || Self.helperNames.contains { entry.name.localizedCaseInsensitiveContains($0) }
                 }
-                let cpu = table.tree(of: session.pid, skip: isHelper)
-                    .compactMap { table.entries[$0] }
-                    .reduce(0) { $0 + used($1) }
-                let busy = cpu / elapsed >= Self.busyCPUShare
+                let tree = table.tree(of: session.pid, skip: isHelper).compactMap { table.entries[$0] }
+                let cpu = tree.reduce(0) { $0 + used($1) }
+                let runningToolCall = tree.contains { entry in
+                    entry.pid != session.pid && Self.shellNames.contains(entry.name)
+                        && now.timeIntervalSince1970 - entry.startTime < Self.toolCallWindow
+                }
+                let busy = cpu / elapsed >= Self.busyCPUShare || runningToolCall
                 anyBusy = anyBusy || busy
 
                 let sessionKey = key(session)

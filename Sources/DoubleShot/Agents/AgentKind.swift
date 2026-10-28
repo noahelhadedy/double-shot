@@ -14,19 +14,25 @@ struct AgentKind: Hashable, Sendable {
     var logFolders: [String] = []
     /// Flags that start a one-shot, non-interactive run (`claude -p`), anywhere in the arguments.
     var backgroundFlags: Set<String> = []
-    /// Subcommands that start a one-shot run (`codex exec`), only as the first real argument.
+    /// Subcommands that start a one-shot run (`codex exec`).
     var backgroundCommands: Set<String> = []
+    /// Runs that aren't a coding session at all (the Chrome bridge, `claude mcp serve`).
+    var serviceFlags: Set<String> = []
+    var serviceCommands: Set<String> = []
 
     static let all: [AgentKind] = [
         AgentKind(id: "claude", name: "Claude Code", executables: ["claude"],
                   packages: ["/node_modules/@anthropic-ai/claude-code/"],
                   versionFolders: ["/claude/versions/"],
                   logFolders: [".claude/projects"],
-                  backgroundFlags: ["-p", "--print"]),
+                  backgroundFlags: ["-p", "--print"],
+                  serviceFlags: ["--chrome-native-host"],
+                  serviceCommands: ["mcp"]),
         AgentKind(id: "codex", name: "Codex", executables: ["codex"],
                   packages: ["/node_modules/@openai/codex/"],
                   logFolders: [".codex/sessions"],
-                  backgroundCommands: ["exec", "e"]),
+                  backgroundCommands: ["exec", "e"],
+                  serviceCommands: ["mcp", "mcp-server"]),
         AgentKind(id: "gemini", name: "Gemini CLI", executables: ["gemini"],
                   packages: ["/node_modules/@google/gemini-cli/"],
                   logFolders: [".gemini/tmp"],
@@ -64,25 +70,43 @@ struct AgentKind: Hashable, Sendable {
             if versionFolders.contains(where: { path.contains($0) }) { return true }
         }
         guard AgentKind.isInterpreter(name), let arguments else { return false }
+        // argv[0] too: a node CLI that sets process.title shows up as just "claude".
         // A few arguments in: covers `node --flag script`, `bun run script` and `python -m aider`
-        return arguments.dropFirst().prefix(4).contains { argument in
-            executables.contains((argument as NSString).lastPathComponent)
-                || packages.contains { argument.contains($0) }
-        }
+        return arguments.prefix(5).contains(where: isAgentArgument)
+    }
+
+    private func isAgentArgument(_ argument: String) -> Bool {
+        executables.contains((argument as NSString).lastPathComponent)
+            || packages.contains { argument.contains($0) }
+    }
+
+    /// The agent's own arguments: what comes after the script (`node cli.js`, `python -m aider`),
+    /// or after the binary itself.
+    private func ownArguments(_ arguments: [String]) -> [String] {
+        let rest = arguments.dropFirst()
+        guard let script = rest.prefix(4).firstIndex(where: isAgentArgument) else { return Array(rest) }
+        return Array(rest[(script + 1)...])
     }
 
     /// A one-shot run works until it exits. The desktop apps talk to their sessions over
     /// stream-json, which makes them interactive whatever flags they carry.
     func isBackgroundRun(_ arguments: [String]) -> Bool {
-        let rest = Array(arguments.dropFirst())
-        if let index = rest.firstIndex(of: "--input-format"), rest.indices.contains(index + 1),
-           rest[index + 1] == "stream-json" {
+        let own = ownArguments(arguments)
+        if own.contains("--input-format=stream-json") { return false }
+        if let index = own.firstIndex(of: "--input-format"), own.indices.contains(index + 1),
+           own[index + 1] == "stream-json" {
             return false
         }
-        if rest.contains(where: { backgroundFlags.contains($0) }) { return true }
-        // Skip the script path for interpreters, then look at the first real argument only
-        let skipScript = rest.first.map { executables.contains(($0 as NSString).lastPathComponent) || packages.contains(where: $0.contains) } ?? false
-        guard let command = rest.dropFirst(skipScript ? 1 : 0).first(where: { !$0.hasPrefix("-") }) else { return false }
-        return backgroundCommands.contains(command)
+        if own.contains(where: { backgroundFlags.contains($0) }) { return true }
+        // Subcommands can come after options with values (`codex -m o3 exec`)
+        return own.contains(where: backgroundCommands.contains)
+    }
+
+    /// Not a coding session: a bridge or server the agent's binary also provides.
+    func isService(_ arguments: [String]) -> Bool {
+        let own = ownArguments(arguments)
+        if own.contains(where: serviceFlags.contains) { return true }
+        guard let command = own.first(where: { !$0.hasPrefix("-") }) else { return false }
+        return serviceCommands.contains(command)
     }
 }

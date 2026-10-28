@@ -62,7 +62,7 @@ Or by hand:
 
 1. Download `DoubleShot-x.y.z.zip` from [Releases](https://github.com/noahelhadedy/double-shot/releases/latest) and unzip it.
 2. Move **Double Shot.app** to your Applications folder.
-3. Open it. The app isn't notarized by Apple yet, so the first time macOS says it "could not verify Double Shot is free of malware". Click **Done**, not Move to Trash. Then go to **System Settings > Privacy & Security**, scroll down, click **Open Anyway** and enter your password. You only do this once. Or run:
+3. Open it. The app isn't notarized by Apple yet, so the first time macOS says it "could not verify Double Shot is free of malware". Click **Done**, not Move to Trash. Then go to **System Settings > Privacy & Security**, scroll down, click **Open Anyway** and enter your password. Downloads from the browser need this again for each new version (Homebrew skips it). Or run:
 
    ```sh
    xattr -dr com.apple.quarantine "/Applications/Double Shot.app"
@@ -89,7 +89,7 @@ With an external display connected, a closed lid is a normal desk setup, so the 
 - The next time it opens, it also undoes anything an earlier run left behind.
 - Heat: it stops when the Mac gets hot, and at the first warm level when the lid is closed in a bag.
 - Battery: it stops at 20% on battery by default (Settings > Safety).
-- Updates: once a day it asks GitHub whether a newer version is out and shows a small note in the panel. Nothing about your Mac is sent. Turn it off in Settings > General.
+- Updates: once a day it asks GitHub whether a newer version is out and shows a small note in the panel. It's a plain request with no personal data. Turn it off in Settings > General.
 
 ## If your Mac won't sleep
 
@@ -110,13 +110,17 @@ If Low Power Mode stayed on, run `sudo pmset -b lowpowermode 0`.
 ## Uninstall
 
 1. Open Double Shot, go to **Settings > Lid Closed** and click **Remove Permission**. This removes the sudoers rule and turns sleep back on.
-2. Quit Double Shot and move it to the Trash.
+2. In **Settings > General**, turn off **Open Double Shot when you log in**.
+3. Quit Double Shot and move it to the Trash, or with Homebrew run `brew uninstall --cask --zap double-shot`.
 
-If you already deleted the app, remove the rule by hand:
+If you already deleted the app, clean up by hand:
 
 ```sh
-sudo rm /etc/sudoers.d/doubleshot
+sudo rm -f /etc/sudoers.d/doubleshot
 sudo pmset -a disablesleep 0
+sudo pmset -b lowpowermode 0
+rm -rf ~/Library/Application\ Support/DoubleShot
+defaults delete com.noahelhadedy.DoubleShot
 ```
 
 ## How agent detection works

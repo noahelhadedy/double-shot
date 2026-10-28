@@ -21,12 +21,19 @@ final class FolderWatcher {
         guard !newFolders.isEmpty else { return }
 
         var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
-        let callback: FSEventStreamCallback = { _, info, count, paths, _, _ in
+        let callback: FSEventStreamCallback = { _, info, count, paths, eventFlags, _ in
             guard let info else { return }
             let watcher = Unmanaged<FolderWatcher>.fromOpaque(info).takeUnretainedValue()
             let list = Unmanaged<CFArray>.fromOpaque(paths).takeUnretainedValue() as? [String] ?? []
+            // Only new or changed content counts, not deletes, renames or metadata (cleanups, backups)
+            let written = FSEventStreamEventFlags(kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemModified)
+            let removed = FSEventStreamEventFlags(kFSEventStreamEventFlagItemRemoved)
             MainActor.assumeIsolated {
-                for path in list.prefix(count) { watcher.onEvent(path) }
+                for (index, path) in list.prefix(count).enumerated() {
+                    let flags = eventFlags[index]
+                    guard flags & written != 0, flags & removed == 0 else { continue }
+                    watcher.onEvent(path)
+                }
             }
         }
         let flags = FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes)

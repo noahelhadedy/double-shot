@@ -25,6 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func showWelcome(at step: WelcomeView.Step = .hello) {
+        // A Mac without a lid has no lid step
+        let step = step == .lid && !SystemState.hasLid ? .agents : step
         welcome?.close()
         welcome = WelcomeWindowController(engine: engine, startAt: step) { [weak self] openPanel in
             self?.engine.prefs.welcomeDone = true

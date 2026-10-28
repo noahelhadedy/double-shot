@@ -45,6 +45,8 @@ final class AwakeEngine {
     @ObservationIgnored private var endTimer: Timer?
     @ObservationIgnored private var wasInBag = false
     @ObservationIgnored private var isShuttingDown = false
+    /// Logout, restart or shut down in progress: quitting must never put the Mac to sleep then.
+    @ObservationIgnored private var isPoweringOff = false
     /// After a failed pmset call, wait before trying again instead of calling sudo every tick.
     @ObservationIgnored private var lidRetryAfter = Date.distantPast
 
@@ -68,24 +70,34 @@ final class AwakeEngine {
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.update() }
         }
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.isPoweringOff = true }
+        }
 
         if prefs.turnOnAtLaunch { turnOn(minutes: prefs.defaultMinutes) }
         update()
     }
 
-    /// Everything back to normal, called on quit. Never puts the Mac to sleep: quitting during a
-    /// logout or restart must only undo our changes.
+    /// Everything back to normal, called on quit. A Mac held shut in a bag goes to sleep, since
+    /// nothing else will put it down; during a logout or restart it only undoes our changes.
     func shutdown() {
+        let wasHeldInBag = isLidHeld && SystemState.isClosedInBag
         isShuttingDown = true
         isManualOn = false
         isHeldForAgents = false
         agents.stop()
         apply()
         LidHold.cleanUpLeftovers()
+        if wasHeldInBag, !isPoweringOff { SystemState.sleepNow() }
     }
 
     func refreshLidSetup() {
         isLidSetUp = LidHold.isSetUp
+        // Removing the permission turns sleep back on as root, so there is no hold left to undo
+        if !isLidSetUp, !LidHold.sleepDisabledByUs {
+            isLidHeld = false
+            lidRetryAfter = .distantPast
+        }
         update()
     }
 
@@ -93,6 +105,8 @@ final class AwakeEngine {
 
     /// minutes == 0 means until turned off.
     func turnOn(minutes: Int) {
+        // At most a week; anything else (negative, huge numbers from a URL) is until turned off
+        let minutes = (1...10_080).contains(minutes) ? minutes : 0
         isManualOn = true
         lastCutoff = nil
         manualMinutes = minutes
@@ -156,6 +170,13 @@ final class AwakeEngine {
     }
 
     func update() {
+        // Timers don't count time asleep, so a session can end while the Mac sleeps and the timer fires late
+        if isManualOn, let manualEnd, manualEnd <= Date() {
+            Log.engine.notice("Time is up")
+            isManualOn = false
+            self.manualEnd = nil
+            scheduleEndTimer()
+        }
         if prefs.agentMode { agents.start() } else { agents.stop() }
         if prefs.checkForUpdates { updates.start() } else { updates.stop() }
         updateAgentHold()
@@ -164,6 +185,10 @@ final class AwakeEngine {
             cut(.heat)
         } else if isAwake, isBatteryLow {
             cut(.battery)
+        } else if !isAwake, let lastCutoff {
+            // The note goes away once the reason has: plugged in, or cooled down
+            let over = lastCutoff == .battery ? !isBatteryLow : SystemState.thermal == .nominal
+            if over { self.lastCutoff = nil }
         }
         apply()
         onChange?()
@@ -206,14 +231,13 @@ final class AwakeEngine {
 
     /// Makes the system match the decisions above.
     private func apply() {
-        let lidClosed = SystemState.isLidClosed
         let inBag = SystemState.isClosedInBag
         let wantsLid = isAwake && isLidSetUp && prefs.lidClosed && !isShuttingDown
 
         // A closed Mac that isn't allowed to stay up closed should sleep, not be held by an assertion
         systemAssertion.set(isAwake && !(inBag && !wantsLid))
         // Agents can work with a dark screen, only the user's own session keeps it lit
-        displayAssertion.set(isManualOn && prefs.keepDisplayOn && !lidClosed)
+        displayAssertion.set(isManualOn && prefs.keepDisplayOn && !inBag)
 
         if wantsLid != isLidHeld, Date() >= lidRetryAfter {
             if wantsLid {
@@ -241,11 +265,12 @@ final class AwakeEngine {
         }
         // Low Power Mode only matters on battery, and only the battery profile is changed
         let wantsLowPower = heldInBag && prefs.lowPowerWhileClosed && SystemState.battery?.isOnBattery == true
-        if wantsLowPower, !LidHold.lowPowerForcedByUs, !SystemState.isLowPowerModeOn {
-            LidHold.setLowPowerMode(true)
+        if wantsLowPower, !LidHold.lowPowerForcedByUs, !SystemState.isLowPowerModeOn, Date() >= lidRetryAfter {
+            if !LidHold.setLowPowerMode(true) { lidRetryAfter = Date().addingTimeInterval(60) }
         } else if !wantsLowPower, LidHold.lowPowerForcedByUs {
             LidHold.setLowPowerMode(false)
         }
         wasInBag = heldInBag
+        LidHold.heldInBag = heldInBag && !isShuttingDown
     }
 }

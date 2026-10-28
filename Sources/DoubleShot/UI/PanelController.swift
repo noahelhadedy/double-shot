@@ -9,8 +9,13 @@ final class PanelController {
     }
 
     private let panel: Panel
+    private let engine: AwakeEngine
+    private let openSettings: (SettingsTab) -> Void
     private var outsideClickMonitor: Any?
+    private var insideClickMonitor: Any?
     private var escMonitor: Any?
+    private var spaceObserver: NSObjectProtocol?
+    private weak var button: NSStatusBarButton?
     private var anchor: NSRect = .zero
     private var resizeObserver: NSObjectProtocol?
 
@@ -26,19 +31,8 @@ final class PanelController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         panel.animationBehavior = .utilityWindow
 
-        let root = PanelView(engine: engine,
-                             openSettings: { [weak self] tab in
-                                 self?.close()
-                                 openSettings(tab)
-                             },
-                             quit: { NSApp.terminate(nil) })
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(.white.opacity(0.12)))
-            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-
-        let hosting = NSHostingController(rootView: root)
-        hosting.sizingOptions = .preferredContentSize
-        panel.contentViewController = hosting
+        self.engine = engine
+        self.openSettings = openSettings
 
         // Content grows and shrinks (agents come and go): keep the top edge under the menu bar
         resizeObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: panel, queue: .main) { [weak self] _ in
@@ -52,8 +46,12 @@ final class PanelController {
 
     func show(below button: NSStatusBarButton) {
         guard let buttonWindow = button.window else { return }
+        self.button = button
         anchor = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        // The content only exists while the panel is open, so its animations never run in the background
+        panel.contentViewController = makeContent()
         placeUnderAnchor()
+        button.highlight(true)
         panel.alphaValue = 0
         panel.makeKeyAndOrderFront(nil)
         NSAnimationContext.runAnimationGroup { context in
@@ -62,6 +60,17 @@ final class PanelController {
         }
 
         outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            MainActor.assumeIsolated { self?.close() }
+        }
+        // Clicks in our own windows (Settings, Welcome) close it too, except the cup that toggles it
+        insideClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self, event.window !== self.panel, event.window !== self.button?.window else { return }
+                self.close()
+            }
+            return event
+        }
+        spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.close() }
         }
         escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -74,10 +83,32 @@ final class PanelController {
     func close() {
         guard isShown else { return }
         if let outsideClickMonitor { NSEvent.removeMonitor(outsideClickMonitor) }
+        if let insideClickMonitor { NSEvent.removeMonitor(insideClickMonitor) }
         if let escMonitor { NSEvent.removeMonitor(escMonitor) }
+        if let spaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(spaceObserver) }
         outsideClickMonitor = nil
+        insideClickMonitor = nil
         escMonitor = nil
+        spaceObserver = nil
+        button?.highlight(false)
         panel.orderOut(nil)
+        panel.contentViewController = nil
+    }
+
+    private func makeContent() -> NSViewController {
+        let root = PanelView(engine: engine,
+                             openSettings: { [weak self] tab in
+                                 self?.close()
+                                 self?.openSettings(tab)
+                             },
+                             quit: { NSApp.terminate(nil) })
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(.white.opacity(0.12)))
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+
+        let hosting = NSHostingController(rootView: root)
+        hosting.sizingOptions = .preferredContentSize
+        return hosting
     }
 
     private func placeUnderAnchor() {
