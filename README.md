@@ -14,7 +14,7 @@
 
 ## Why
 
-You start a long Claude Code or Codex run, close the lid, put the Mac in your bag, and the work stops. On battery with no external display, macOS sleeps the moment the lid closes. `caffeinate` and most keep-awake apps only stop *idle* sleep, and the ones that handle a closed lid don't know when your agents are done.
+You start a long Claude Code or Codex run, close the lid, put the Mac in your bag, and the work stops. Without an external display, macOS sleeps the moment the lid closes. `caffeinate` and most keep-awake apps only stop *idle* sleep, and the ones that handle a closed lid don't know when your agents are done.
 
 Double Shot handles both:
 
