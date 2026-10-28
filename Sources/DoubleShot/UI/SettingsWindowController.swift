@@ -24,6 +24,8 @@ final class SettingsWindowController: NSWindowController {
             }
             let hosting = NSHostingController(rootView: view)
             hosting.sizingOptions = .preferredContentSize
+            // The tab controller puts the selected tab's title on the window, "Untitled" without one
+            hosting.title = tab.title
             let item = NSTabViewItem(viewController: hosting)
             item.label = tab.title
             item.image = NSImage(systemSymbolName: tab.symbol, accessibilityDescription: tab.title)
@@ -38,7 +40,6 @@ final class SettingsWindowController: NSWindowController {
         if let index = tabs.tabViewItems.firstIndex(where: { ($0.identifier as? String) == tab.rawValue }) {
             tabs.selectedTabViewItemIndex = index
         }
-        window?.title = tab.title
         window?.center()
         NSApp.activate()
         showWindow(nil)
