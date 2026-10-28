@@ -150,7 +150,10 @@ struct PanelView: View {
     }
 
     private var sentence: String {
-        if pourIndex != nil { return "Let go to pour." }
+        pourIndex == nil ? Self.sentence(engine) : "Let go to pour."
+    }
+
+    static func sentence(_ engine: AwakeEngine) -> String {
         let working = engine.agents.running.filter(\.isWorking).map(\.kind.name)
         if engine.isManualOn {
             if !working.isEmpty { return "\(Self.names(working)) working too." }
@@ -164,7 +167,10 @@ struct PanelView: View {
             return "\(Self.names(working)) working. I'll stay up until it's done."
         }
         if engine.isAgentHoldSuppressed { return "Paused until your agents finish." }
-        if prefs.agentMode { return "Sleeps like normal, and wakes up by itself when an agent starts working." }
+        if let cutoff = engine.lastCutoff, engine.prefs.agentMode {
+            return cutoff == .heat ? "Agents wait until your Mac cools down." : "Agents wait until you plug in."
+        }
+        if engine.prefs.agentMode { return "Sleeps like normal, and wakes up by itself when an agent starts working." }
         return "Your Mac sleeps like normal. Drag up on the glass to pour some time."
     }
 
@@ -245,16 +251,20 @@ struct PanelView: View {
         return engine.isAwake ? "Close the lid and the work keeps going." : "While it's on, closing the lid won't stop the work."
     }
 
-    /// What agents mode is doing right now, in one plain line.
     private var agentDetail: String {
-        guard prefs.agentMode else { return "Off. Agents won't keep your Mac awake." }
+        Self.agentDetail(engine)
+    }
+
+    /// What agents mode is doing right now, in one plain line.
+    static func agentDetail(_ engine: AwakeEngine) -> String {
+        guard engine.prefs.agentMode else { return "Off. Agents won't keep your Mac awake." }
         let running = engine.agents.running
         guard !running.isEmpty else { return "None open. I'll stay up by myself once one starts working." }
         if let cutoff = engine.lastCutoff, !engine.isAwake {
             return cutoff == .heat ? "Stopped because your Mac got warm." : "Stopped because the battery is low."
         }
         if engine.isAgentHoldSuppressed { return "Paused by you until they finish." }
-        let lidPart = lidOn ? ", lid closed too." : "."
+        let lidPart = engine.isLidSetUp && engine.prefs.lidClosed ? ", lid closed too." : "."
         let background = running.reduce(0) { $0 + $1.backgroundRuns }
         if background > 0 {
             return (background == 1 ? "A background run is going" : "\(background) background runs are going")

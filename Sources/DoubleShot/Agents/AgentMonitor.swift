@@ -262,7 +262,11 @@ final class AgentMonitor {
         lastCheckAt = now
         argumentsCache = liveArguments
         lastActive = liveActive
+        publish(statuses, at: now)
+    }
 
+    /// Shows what a check found and tells the engine.
+    func publish(_ statuses: [Status], at now: Date) {
         let working = statuses.contains { $0.isWorking }
         if working { lastWorkingAt = now }
         if statuses != running { running = statuses }

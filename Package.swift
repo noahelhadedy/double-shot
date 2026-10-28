@@ -13,5 +13,6 @@ let package = Package(
                 .linkedFramework("ServiceManagement"),
             ]
         ),
+        .testTarget(name: "DoubleShotTests", dependencies: ["DoubleShot"]),
     ]
 )

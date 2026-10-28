@@ -87,8 +87,8 @@ With an external display connected, a closed lid is a normal desk setup, so the 
 
 - If Double Shot crashes or is force quit while it holds the lid, a small watchdog it left running turns sleep back on within a few seconds.
 - The next time it opens, it also undoes anything an earlier run left behind.
-- Heat: it stops when the Mac gets hot, and at the first warm level when the lid is closed in a bag.
-- Battery: it stops at 20% on battery by default (Settings > Safety).
+- Heat: it stops when the Mac gets hot, and at the first warm level when the lid is closed in a bag. Agents still working pick up again once it has cooled down.
+- Battery: it stops at 20% on battery by default (Settings > Safety). Agents still working pick up again once you plug in.
 - Updates: once a day it asks GitHub whether a newer version is out and shows a small note in the panel. It's a plain request with no personal data. Turn it off in Settings > General.
 
 ## If your Mac won't sleep
@@ -131,7 +131,7 @@ No hooks and nothing to set up per tool. Every 10 seconds Double Shot looks for 
 - Any other session counts as working when, since the last check, it used real CPU itself or through the tool calls it started, or a tool call it started is still running (up to 30 minutes). Its MCP servers, browsers and language servers are left out.
 - A session also counts as working for 90 seconds after its session log changes (`~/.claude/projects`, `~/.codex/sessions`, `~/.gemini/tmp` and so on, watched with FSEvents). Claude Code keeps one log folder per project, so each Claude session only counts its own writes. For the other agents a write counts for all their sessions.
 
-A session sitting at the prompt, or waiting for you to approve something, does none of this, so it lets your Mac sleep. When everything has been quiet for the grace period (3 minutes by default), Double Shot lets go. Turning it off by hand during a run is respected until the agents go quiet.
+A session sitting at the prompt, or waiting for you to approve something, does none of this, so it lets your Mac sleep. When everything has been quiet for the grace period (3 minutes by default), Double Shot lets go. Turning it off by hand during a run is respected until the agents go quiet. Stopping for heat or a low battery is not the same: the agents pick up again once the reason is gone.
 
 Cursor Agent means the `cursor-agent` command line tool. The agent inside the Cursor editor isn't detected.
 

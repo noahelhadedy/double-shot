@@ -7,7 +7,7 @@ import Observation
 final class Preferences {
     static let shared = Preferences()
 
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
 
     private enum Key {
         static let keepDisplayOn = "keepDisplayOn"
@@ -25,7 +25,9 @@ final class Preferences {
         static let checkForUpdates = "checkForUpdates"
     }
 
-    private init() {
+    /// The app uses `shared`; tests pass their own defaults so they never touch the real settings.
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         defaults.register(defaults: [
             Key.keepDisplayOn: true,
             Key.defaultMinutes: 0,

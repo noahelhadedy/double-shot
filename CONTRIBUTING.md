@@ -6,6 +6,7 @@ Pull requests are welcome, especially new agents in `Sources/DoubleShot/Agents/A
 
 - `Core/AwakeEngine.swift` makes every decision: your own sessions, agents, the lid hold and the heat and battery cutoffs.
 - `Core/LidHold.swift` installs and removes the sudoers rule, runs pmset, and starts the watchdog that turns sleep back on if the app dies.
+- `Core/PowerSystem.swift` is everything the engine reads from the Mac and changes on it. Tests run the engine against `FakeMac` instead, so they never need a password.
 - `Agents/AgentMonitor.swift` judges each agent session; `AgentKind.swift` is the catalog; `ProcessTable.swift` reads the process list with libproc.
 - `UI/PanelView.swift` is the panel, `UI/SettingsView.swift` the Settings window, `UI/StatusItemController.swift` the menu bar mug.
 
@@ -15,6 +16,8 @@ Pull requests are welcome, especially new agents in `Sources/DoubleShot/Agents/A
 - Anything that disables sleep must be undone on every exit path: quit, signals (routed through `NSApp.terminate` in `main.swift`), and crashes (the watchdog plus the cleanup at launch).
 
 ## Build and test
+
+`swift test` runs the unit tests. They need no password and never change how the Mac sleeps.
 
 `scripts/build-app.sh` builds the universal app into `dist/`. Quit the installed copy first. Test the lid paths on battery with no external display: close the lid while an agent works, open it, let the agent finish, and check `pmset -g | grep -i sleepdisabled` reads 0 afterwards.
 
