@@ -14,14 +14,41 @@ enum LidHold {
         "/usr/bin/pmset -b lowpowermode 0",
     ]
 
-    /// Whether the sudoers rule is in place and allows every command we use, the "back on" ones first.
+    /// Whether a sudoers rule lets us run every command we use without a password.
+    ///
+    /// `sudo -n -l <command>` isn't enough: for an admin it also says yes through "(ALL) ALL",
+    /// which still asks for a password, so the commands have to be listed under NOPASSWD.
     static var isSetUp: Bool {
-        allows(["-a", "disablesleep", "0"]) && allows(["-a", "disablesleep", "1"])
-            && allows(["-b", "lowpowermode", "0"]) && allows(["-b", "lowpowermode", "1"])
+        let listing = Shell.run("/usr/bin/sudo", ["-n", "-l"])
+        guard listing.status == 0 else { return false }
+        let allowed = passwordFreeCommands(in: listing.output)
+        return allowedCommands.allSatisfy(allowed.contains)
     }
 
-    private static func allows(_ arguments: [String]) -> Bool {
-        Shell.run("/usr/bin/sudo", ["-n", "-l", "/usr/bin/pmset"] + arguments).status == 0
+    /// Commands listed after a NOPASSWD tag in `sudo -l` output, entries like
+    /// "(root) NOPASSWD: /usr/bin/pmset -a disablesleep 1, /usr/bin/pmset -a disablesleep 0".
+    static func passwordFreeCommands(in listing: String) -> Set<String> {
+        // An entry starts with its runas list in parentheses; longer ones may wrap onto more lines
+        var entries: [String] = []
+        for line in listing.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("(") {
+                entries.append(trimmed)
+            } else if !trimmed.isEmpty, line.first?.isWhitespace == true, !entries.isEmpty {
+                entries[entries.count - 1] += " " + trimmed
+            }
+        }
+        var commands: Set<String> = []
+        for entry in entries {
+            guard let tag = entry.range(of: "NOPASSWD:") else { continue }
+            for item in entry[tag.upperBound...].split(separator: ",") {
+                let command = item.trimmingCharacters(in: .whitespaces)
+                // Another tag (PASSWD:, SETENV:) changes the rules for what follows
+                if command.contains(":") { break }
+                commands.insert(command)
+            }
+        }
+        return commands
     }
 
     // MARK: - State that must survive a crash

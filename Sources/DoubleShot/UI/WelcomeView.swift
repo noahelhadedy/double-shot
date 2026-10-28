@@ -97,7 +97,7 @@ struct WelcomeView: View {
         case .lid:
             VStack(alignment: .leading, spacing: 18) {
                 StepText(title: "Keep working with the lid closed",
-                         text: "macOS always sleeps when you close the lid. Double Shot can stop that, so you can close your Mac and the work keeps going.\n\nIt needs your password once. It only gets permission to switch sleep and Low Power Mode on and off, nothing else.")
+                         text: "Without an external display, macOS sleeps when you close the lid. Double Shot can stop that, so you can close your Mac and the work keeps going.\n\nIt needs your password once. It only gets permission to switch sleep and Low Power Mode on and off, nothing else.")
                 if engine.isLidSetUp {
                     DoneLabel(text: "Lid closed mode is ready")
                 } else {

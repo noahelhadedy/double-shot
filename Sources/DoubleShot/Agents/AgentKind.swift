@@ -12,6 +12,11 @@ struct AgentKind: Hashable, Sendable {
     var versionFolders: [String] = []
     /// Folders (relative to home) the agent writes its session logs to while it works.
     var logFolders: [String] = []
+    /// Endings of the session log files in those folders.
+    var logSuffixes: [String] = [".jsonl", ".json"]
+    /// Logs go in one subfolder per working directory (Claude: ~/.claude/projects/-Users-me-app),
+    /// so a write can be tied to the session that made it.
+    var logsPerProject = false
     /// Flags that start a one-shot, non-interactive run (`claude -p`), anywhere in the arguments.
     var backgroundFlags: Set<String> = []
     /// Subcommands that start a one-shot run (`codex exec`).
@@ -25,6 +30,7 @@ struct AgentKind: Hashable, Sendable {
                   packages: ["/node_modules/@anthropic-ai/claude-code/"],
                   versionFolders: ["/claude/versions/"],
                   logFolders: [".claude/projects"],
+                  logsPerProject: true,
                   backgroundFlags: ["-p", "--print"],
                   serviceFlags: ["--chrome-native-host"],
                   serviceCommands: ["mcp"]),
@@ -37,9 +43,12 @@ struct AgentKind: Hashable, Sendable {
                   packages: ["/node_modules/@google/gemini-cli/"],
                   logFolders: [".gemini/tmp"],
                   backgroundFlags: ["-p", "--prompt"]),
+        // Runs as its own bundled node: .../cursor-agent/versions/<v>/node .../versions/<v>/index.js
         AgentKind(id: "cursor", name: "Cursor Agent", executables: ["cursor-agent"],
+                  packages: ["/cursor-agent/versions/"],
                   versionFolders: ["/cursor-agent/versions/"],
                   logFolders: [".cursor/chats"],
+                  logSuffixes: [".db", ".db-wal", ".jsonl", ".json"],
                   backgroundFlags: ["-p", "--print"]),
         AgentKind(id: "copilot", name: "Copilot CLI", executables: ["copilot"],
                   packages: ["/node_modules/@github/copilot/"],

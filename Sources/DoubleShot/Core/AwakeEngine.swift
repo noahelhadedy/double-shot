@@ -49,6 +49,8 @@ final class AwakeEngine {
     @ObservationIgnored private var isPoweringOff = false
     /// After a failed pmset call, wait before trying again instead of calling sudo every tick.
     @ObservationIgnored private var lidRetryAfter = Date.distantPast
+    /// Its own clock, so a failing Low Power Mode call never delays letting go of the lid (heat, work done).
+    @ObservationIgnored private var lowPowerRetryAfter = Date.distantPast
 
     // MARK: - Life cycle
 
@@ -265,8 +267,8 @@ final class AwakeEngine {
         }
         // Low Power Mode only matters on battery, and only the battery profile is changed
         let wantsLowPower = heldInBag && prefs.lowPowerWhileClosed && SystemState.battery?.isOnBattery == true
-        if wantsLowPower, !LidHold.lowPowerForcedByUs, !SystemState.isLowPowerModeOn, Date() >= lidRetryAfter {
-            if !LidHold.setLowPowerMode(true) { lidRetryAfter = Date().addingTimeInterval(60) }
+        if wantsLowPower, !LidHold.lowPowerForcedByUs, !SystemState.isLowPowerModeOn, Date() >= lowPowerRetryAfter {
+            if !LidHold.setLowPowerMode(true) { lowPowerRetryAfter = Date().addingTimeInterval(60) }
         } else if !wantsLowPower, LidHold.lowPowerForcedByUs {
             LidHold.setLowPowerMode(false)
         }

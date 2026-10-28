@@ -14,12 +14,12 @@
 
 ## Why
 
-You start a long Claude Code or Codex run, close the lid, put the Mac in your bag, and the work stops. macOS sleeps the moment the lid closes, and the usual keep-awake apps only stop *idle* sleep.
+You start a long Claude Code or Codex run, close the lid, put the Mac in your bag, and the work stops. On battery with no external display, macOS sleeps the moment the lid closes. `caffeinate` and most keep-awake apps only stop *idle* sleep, and the ones that handle a closed lid don't know when your agents are done.
 
 Double Shot handles both:
 
 - **Stays awake while your agents work.** It notices when Claude Code, Codex, Gemini CLI, Cursor Agent, Copilot CLI, OpenCode, Amp or Aider are actually working, not just open. Background runs like `claude -p` or `codex exec` count until they end. A few minutes after everything is quiet, your Mac sleeps like normal again. No setup, no hooks.
-- **Keeps going with the lid closed.** Close the lid and the work carries on. When it's done, Double Shot puts the Mac to sleep for you.
+- **Keeps going with the lid closed.** After a one-time admin password, close the lid and the work carries on, on battery too. When it's done, Double Shot puts the Mac to sleep for you.
 - **Looks after the Mac.** A closed Mac in a bag can't cool down, so Double Shot stops at the first warm level, turns the dark display fully off, switches on Low Power Mode on battery, and lets go when the battery gets low.
 
 It still does the simple thing too: keep your Mac awake for a while, or until you turn it off.
@@ -62,7 +62,7 @@ Or by hand:
 
 1. Download `DoubleShot-x.y.z.zip` from [Releases](https://github.com/noahelhadedy/double-shot/releases/latest) and unzip it.
 2. Move **Double Shot.app** to your Applications folder.
-3. Open it. The app isn't notarized by Apple yet, so the first time macOS says it "could not verify Double Shot is free of malware". Click **Done**, not Move to Trash. Then go to **System Settings > Privacy & Security**, scroll down, click **Open Anyway** and enter your password. Downloads from the browser need this again for each new version (Homebrew skips it). Or run:
+3. Open it. The app isn't notarized by Apple yet, so the first time macOS says it "could not verify Double Shot is free of malware". Click **Done**, not Move to Trash. Then go to **System Settings > Privacy & Security**, scroll down, click **Open Anyway** and enter your password. Downloads from the browser need this again for each new version (the Homebrew cask clears the quarantine flag for you). Or run:
 
    ```sh
    xattr -dr com.apple.quarantine "/Applications/Double Shot.app"
@@ -125,13 +125,15 @@ defaults delete com.noahelhadedy.DoubleShot
 
 ## How agent detection works
 
-Every 10 seconds Double Shot looks for known agent processes and judges each session on its own:
+No hooks and nothing to set up per tool. Every 10 seconds Double Shot looks for known agent processes and judges each session on its own:
 
-- A one-shot background run (`claude -p`, `codex exec`, `gemini -p` and the like) counts as working for as long as it runs, even while it waits on the model. If it shows no sign of life for 20 minutes, it's treated as stuck.
-- Any other session counts as working when, since the last check, it used real CPU itself or through the tool calls it started. Its MCP servers, browsers and language servers are left out.
-- An agent also counts as working for 90 seconds after it writes a session log (`~/.claude/projects`, `~/.codex/sessions`, `~/.gemini/tmp` and so on, watched with FSEvents, nothing is scanned).
+- A one-shot background run (`claude -p`, `codex exec`, `gemini -p` and the like) counts as working for as long as it runs, even while it waits on the model. If it shows no sign of life of its own for 20 minutes, it's treated as stuck.
+- Any other session counts as working when, since the last check, it used real CPU itself or through the tool calls it started, or a tool call it started is still running (up to 30 minutes). Its MCP servers, browsers and language servers are left out.
+- A session also counts as working for 90 seconds after its session log changes (`~/.claude/projects`, `~/.codex/sessions`, `~/.gemini/tmp` and so on, watched with FSEvents). Claude Code keeps one log folder per project, so each Claude session only counts its own writes. For the other agents a write counts for all their sessions.
 
-A session sitting at the prompt does none of this, so an open but idle session never keeps your Mac awake. When everything has been quiet for the grace period (3 minutes by default), Double Shot lets go. Turning it off by hand during a run is respected until the agents go quiet.
+A session sitting at the prompt, or waiting for you to approve something, does none of this, so it lets your Mac sleep. When everything has been quiet for the grace period (3 minutes by default), Double Shot lets go. Turning it off by hand during a run is respected until the agents go quiet.
+
+Cursor Agent means the `cursor-agent` command line tool. The agent inside the Cursor editor isn't detected.
 
 Want another agent supported? Add it to [`AgentKind.swift`](Sources/DoubleShot/Agents/AgentKind.swift) and open a pull request.
 
