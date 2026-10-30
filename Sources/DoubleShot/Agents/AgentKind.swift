@@ -24,6 +24,8 @@ struct AgentKind: Hashable, Sendable {
     /// Runs that aren't a coding session at all (the Chrome bridge, `claude mcp serve`).
     var serviceFlags: Set<String> = []
     var serviceCommands: Set<String> = []
+    /// An agent the user added by name: it counts as working for as long as it runs.
+    var countsUntilExit = false
 
     static let all: [AgentKind] = [
         AgentKind(id: "claude", name: "Claude Code", executables: ["claude"],
@@ -65,6 +67,23 @@ struct AgentKind: Hashable, Sendable {
                   backgroundFlags: ["-m", "--message", "--message-file"]),
     ]
 
+    /// Script endings tried when the user types a name without one (`my_agent` finds `python my_agent.py`).
+    private static let scriptEndings = ["py", "js", "mjs", "cjs", "ts"]
+    private static let shells: Set<String> = ["zsh", "bash", "sh", "fish", "dash", "ksh", "tcsh", "nu"]
+
+    /// An agent the user built (LangChain, a script of their own), from the command or script name they typed.
+    /// Interpreters, shells and agents already in the catalog are refused, they'd match far too much.
+    static func custom(_ typed: String) -> AgentKind? {
+        let name = (typed.trimmingCharacters(in: .whitespacesAndNewlines) as NSString).lastPathComponent
+        guard !name.isEmpty, !isInterpreter(name), !shells.contains(name),
+              !all.contains(where: { $0.executables.contains(name) }) else { return nil }
+        var executables: Set<String> = [name]
+        if (name as NSString).pathExtension.isEmpty {
+            for ending in scriptEndings { executables.insert("\(name).\(ending)") }
+        }
+        return AgentKind(id: "custom:\(name)", name: name, executables: executables, countsUntilExit: true)
+    }
+
     static let interpreters: Set<String> = ["node", "bun", "deno", "python", "python3", "Python"]
 
     static func isInterpreter(_ executable: String) -> Bool {
@@ -100,6 +119,7 @@ struct AgentKind: Hashable, Sendable {
     /// A one-shot run works until it exits. The desktop apps talk to their sessions over
     /// stream-json, which makes them interactive whatever flags they carry.
     func isBackgroundRun(_ arguments: [String]) -> Bool {
+        if countsUntilExit { return true }
         let own = ownArguments(arguments)
         if own.contains("--input-format=stream-json") { return false }
         if let index = own.firstIndex(of: "--input-format"), own.indices.contains(index + 1),

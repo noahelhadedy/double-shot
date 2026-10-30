@@ -61,6 +61,7 @@ final class AwakeEngine {
 
         prefs.onChange = { [weak self] in self?.update() }
         agents.onUpdate = { [weak self] in self?.update() }
+        agents.customAgents = prefs.customAgents
         if prefs.agentMode { agents.start() }
 
         tickTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
@@ -179,6 +180,7 @@ final class AwakeEngine {
             self.manualEnd = nil
             scheduleEndTimer()
         }
+        if agents.customAgents != prefs.customAgents { agents.customAgents = prefs.customAgents }
         if prefs.agentMode { agents.start() } else { agents.stop() }
         if prefs.checkForUpdates { updates.start() } else { updates.stop() }
         updateAgentHold()
