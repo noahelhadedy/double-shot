@@ -330,7 +330,7 @@ private struct AgentsList: View {
                         Text("×\(agent.sessions)").font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Text(agent.backgroundRuns > 0 ? "Background run" : (agent.isWorking ? "Working" : "Idle"))
+                    Text(agent.kind.countsUntilExit ? "Running" : agent.backgroundRuns > 0 ? "Background run" : (agent.isWorking ? "Working" : "Idle"))
                         .font(.caption.weight(.medium))
                         .foregroundStyle(agent.backgroundRuns > 0 ? Theme.cremaInk : (agent.isWorking ? Color.green : .secondary))
                 }

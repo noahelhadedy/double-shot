@@ -176,6 +176,13 @@ struct LidSettingsView: View {
 struct AgentSettingsView: View {
     @Bindable var prefs = Preferences.shared
     let engine: AwakeEngine
+    @State private var newAgent = ""
+
+    private func addAgent() {
+        guard let kind = AgentKind.custom(newAgent) else { return }
+        if !prefs.customAgents.contains(kind.name) { prefs.customAgents.append(kind.name) }
+        newAgent = ""
+    }
 
     var body: some View {
         Form {
@@ -206,7 +213,7 @@ struct AgentSettingsView: View {
                                 Circle()
                                     .fill(agent.isWorking ? Color.green : Color.secondary.opacity(0.4))
                                     .frame(width: 8, height: 8)
-                                Text(agent.backgroundRuns > 0 ? "Background run" : (agent.isWorking ? "Working" : "Idle"))
+                                Text(agent.kind.countsUntilExit ? "Running" : agent.backgroundRuns > 0 ? "Background run" : (agent.isWorking ? "Working" : "Idle"))
                             }
                         } label: {
                             Text(agent.sessions > 1 ? "\(agent.kind.name) (\(agent.sessions) sessions)" : agent.kind.name)
@@ -221,6 +228,29 @@ struct AgentSettingsView: View {
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+
+            Section {
+                ForEach(prefs.customAgents, id: \.self) { name in
+                    LabeledContent(name) {
+                        Button("Remove") { prefs.customAgents.removeAll { $0 == name } }
+                    }
+                }
+                HStack {
+                    TextField("Your own agents", text: $newAgent, prompt: Text("my_agent.py"))
+                        .labelsHidden()
+                        .onSubmit(addAgent)
+                    Button("Add", action: addAgent)
+                        .disabled(AgentKind.custom(newAgent) == nil)
+                }
+            } header: {
+                Text("Your own agents")
+            } footer: {
+                Text("Built your own agent, with LangChain or a script? Type its script or command name. Your Mac stays awake for as long as it runs, and lets go when it ends.")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .disabled(!prefs.agentMode)
         }
         .formStyle(.grouped)
         .frame(width: formWidth)

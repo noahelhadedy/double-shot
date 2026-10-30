@@ -2,6 +2,7 @@ import Foundation
 import Observation
 
 /// Notices when AI coding agents are working, with no setup from the user.
+/// Agents the user added by name in Settings count for as long as they run.
 ///
 /// A session counts as working when:
 /// - it's a one-shot background run (`claude -p`, `codex exec`) that showed any sign of life in
@@ -29,6 +30,16 @@ final class AgentMonitor {
     private(set) var lastWorkingAt: Date?
 
     @ObservationIgnored var onUpdate: (() -> Void)?
+    /// Agents the user added by name in Settings, on top of the catalog.
+    @ObservationIgnored var customAgents: [String] = [] {
+        didSet { kinds = AgentKind.all + Self.uniqueCustomKinds(customAgents) }
+    }
+    @ObservationIgnored private var kinds = AgentKind.all
+
+    private static func uniqueCustomKinds(_ names: [String]) -> [AgentKind] {
+        var seen: Set<String> = []
+        return names.compactMap(AgentKind.custom).filter { seen.insert($0.id).inserted }
+    }
 
     private static let interval: TimeInterval = 10
     /// Share of one CPU core a session needs to count as busy.
@@ -216,7 +227,7 @@ final class AgentMonitor {
             let isInterpreter = AgentKind.isInterpreter(entry.name)
             let path = isInterpreter ? nil : Self.executablePath(of: entry.pid)
             let argv = isInterpreter ? arguments(entry) : nil
-            for kind in AgentKind.all where kind.matches(name: entry.name, path: path, arguments: argv) {
+            for kind in kinds where kind.matches(name: entry.name, path: path, arguments: argv) {
                 if kind.isService(argv ?? arguments(entry)) { continue }
                 rootsByKind[kind.id, default: []].append(entry)
             }
@@ -232,7 +243,7 @@ final class AgentMonitor {
 
         var statuses: [Status] = []
         var liveActive: [ProcessKey: Date] = [:]
-        for kind in AgentKind.all {
+        for kind in kinds {
             guard let roots = rootsByKind[kind.id], !roots.isEmpty else { continue }
             let rootPIDs = Set(roots.map(\.pid))
             // Top level sessions only, not an agent's own helper processes
@@ -271,7 +282,10 @@ final class AgentMonitor {
                 let sessionKey = key(session)
                 let active = signOfLife ? now : (lastActive[sessionKey] ?? now)
                 liveActive[sessionKey] = active
-                if kind.isBackgroundRun(arguments(session)), now.timeIntervalSince(active) < Self.backgroundStaleAfter {
+                // An agent the user added has no logs to judge it by, and one waiting on its model barely
+                // uses CPU, so it counts until it exits
+                if kind.isBackgroundRun(arguments(session)),
+                   kind.countsUntilExit || now.timeIntervalSince(active) < Self.backgroundStaleAfter {
                     backgroundRuns += 1
                 }
             }

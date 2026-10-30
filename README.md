@@ -18,7 +18,7 @@ You start a long Claude Code or Codex run, close the lid, put the Mac in your ba
 
 Double Shot handles both:
 
-- **Stays awake while your agents work.** It notices when Claude Code, Codex, Gemini CLI, Cursor Agent, Copilot CLI, OpenCode, Amp or Aider are actually working, not just open. Background runs like `claude -p` or `codex exec` count until they end. A few minutes after everything is quiet, your Mac sleeps like normal again. No setup, no hooks.
+- **Stays awake while your agents work.** It notices when Claude Code, Codex, Gemini CLI, Cursor Agent, Copilot CLI, OpenCode, Amp or Aider are actually working, not just open. Background runs like `claude -p` or `codex exec` count until they end. Built your own agent, with LangChain or a script? Add its name in Settings and it counts too. A few minutes after everything is quiet, your Mac sleeps like normal again. No setup, no hooks.
 - **Keeps going with the lid closed.** After a one-time admin password, close the lid and the work carries on, on battery too. When it's done, Double Shot puts the Mac to sleep for you.
 - **Looks after the Mac.** A closed Mac in a bag can't cool down, so Double Shot stops at the first warm level, turns the dark display fully off, switches on Low Power Mode on battery, and lets go when the battery gets low.
 
@@ -135,7 +135,11 @@ A session sitting at the prompt, or waiting for you to approve something, does n
 
 Cursor Agent means the `cursor-agent` command line tool. The agent inside the Cursor editor isn't detected.
 
-Want another agent supported? Add it to [`AgentKind.swift`](Sources/DoubleShot/Agents/AgentKind.swift) and open a pull request.
+### Your own agents
+
+Built your own agent, with LangChain or a plain script? Add its script or command name in Settings > AI Agents > Your own agents, like `my_agent.py` or just `my_agent`. Double Shot finds it however it's started (`python my_agent.py`, `uv run my_agent.py`, `node my_agent.js`, `python -m my_agent`, or a binary with that name) and keeps the Mac awake for as long as it runs, lid closed too. These agents keep no logs Double Shot could read, and one waiting on its model barely uses CPU, so they count until they exit instead of going by activity.
+
+Want another agent supported out of the box? Add it to [`AgentKind.swift`](Sources/DoubleShot/Agents/AgentKind.swift) and open a pull request.
 
 ## Automation
 

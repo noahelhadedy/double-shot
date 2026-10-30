@@ -18,6 +18,7 @@ final class Preferences {
         static let lowPowerWhileClosed = "lowPowerWhileClosed"
         static let agentMode = "agentMode"
         static let agentGraceMinutes = "agentGraceMinutes"
+        static let customAgents = "customAgents"
         static let batteryGuard = "batteryGuard"
         static let batteryGuardPercent = "batteryGuardPercent"
         static let heatGuard = "heatGuard"
@@ -54,6 +55,7 @@ final class Preferences {
         lowPowerWhileClosed = defaults.bool(forKey: Key.lowPowerWhileClosed)
         agentMode = defaults.bool(forKey: Key.agentMode)
         agentGraceMinutes = defaults.integer(forKey: Key.agentGraceMinutes)
+        customAgents = defaults.stringArray(forKey: Key.customAgents) ?? []
         batteryGuard = defaults.bool(forKey: Key.batteryGuard)
         batteryGuardPercent = defaults.integer(forKey: Key.batteryGuardPercent)
         heatGuard = defaults.bool(forKey: Key.heatGuard)
@@ -78,6 +80,8 @@ final class Preferences {
     // AI agents
     var agentMode: Bool { didSet { save(agentMode, Key.agentMode) } }
     var agentGraceMinutes: Int { didSet { save(agentGraceMinutes, Key.agentGraceMinutes) } }
+    /// Command or script names of agents the user built, like `my_agent.py`.
+    var customAgents: [String] { didSet { save(customAgents, Key.customAgents) } }
 
     // Safety
     var batteryGuard: Bool { didSet { save(batteryGuard, Key.batteryGuard) } }
