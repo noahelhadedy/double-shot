@@ -157,7 +157,8 @@ struct PanelView: View {
             return engine.manualEnd == nil ? "Awake until you say stop." : "Then your Mac sleeps like normal."
         }
         if engine.isHeldForAgents {
-            if engine.agents.running.contains(where: { $0.backgroundRuns > 0 }) {
+            // The user's own agents go by name below, they aren't one-shot runs to them
+            if engine.agents.running.contains(where: { $0.backgroundRuns > 0 && !$0.kind.countsUntilExit }) {
                 return "A background run is going. I'll stay up until it's done."
             }
             if working.isEmpty { return "Your agents just finished. Letting go in a few minutes." }
@@ -255,7 +256,7 @@ struct PanelView: View {
         }
         if engine.isAgentHoldSuppressed { return "Paused by you until they finish." }
         let lidPart = lidOn ? ", lid closed too." : "."
-        let background = running.reduce(0) { $0 + $1.backgroundRuns }
+        let background = running.filter { !$0.kind.countsUntilExit }.reduce(0) { $0 + $1.backgroundRuns }
         if background > 0 {
             return (background == 1 ? "A background run is going" : "\(background) background runs are going")
                 + ". Staying up until done" + lidPart

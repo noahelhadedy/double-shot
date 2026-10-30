@@ -72,9 +72,11 @@ struct AgentKind: Hashable, Sendable {
     private static let shells: Set<String> = ["zsh", "bash", "sh", "fish", "dash", "ksh", "tcsh", "nu"]
 
     /// An agent the user built (LangChain, a script of their own), from the command or script name they typed.
+    /// A whole command (`uv run my_agent.py`, `python -m my_agent`) comes down to its last word.
     /// Interpreters, shells and agents already in the catalog are refused, they'd match far too much.
     static func custom(_ typed: String) -> AgentKind? {
-        let name = (typed.trimmingCharacters(in: .whitespacesAndNewlines) as NSString).lastPathComponent
+        guard let last = typed.split(whereSeparator: \.isWhitespace).last else { return nil }
+        let name = (String(last).trimmingCharacters(in: CharacterSet(charactersIn: "\"'")) as NSString).lastPathComponent
         guard !name.isEmpty, !isInterpreter(name), !shells.contains(name),
               !all.contains(where: { $0.executables.contains(name) }) else { return nil }
         var executables: Set<String> = [name]
