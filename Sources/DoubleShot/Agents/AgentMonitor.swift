@@ -1,3 +1,4 @@
+import DoubleShotCore
 import Foundation
 import Observation
 
@@ -10,6 +11,10 @@ import Observation
 /// - in the last check it used real CPU itself or through the tool calls it started, or
 /// - it wrote its session log in the last 90 seconds (Claude Code logs per working directory,
 ///   so each session gets its own; for other agents a write counts for all their sessions).
+/// Cursor IDE chat and the Agents window are the `extension-host (agent-exec)` helpers; the
+/// `cursor-agent` CLI still counts too. Idle Cursor shell hosts are ignored. Transcript files under
+/// `agent-transcripts` that end with `turn_ended` do **not** count (that write means the run
+/// finished). A working latch (2.5 minutes by default) bridges quiet gaps between tool calls.
 /// Each session is judged on its own, and its helpers (MCP servers, browsers, language
 /// servers) are left out, so an open session waiting for input lets the Mac sleep.
 @MainActor
@@ -63,6 +68,10 @@ final class AgentMonitor {
     /// A log file nobody wrote to for this long is a finished session, stop checking it.
     private static let trackedFileLifetime: TimeInterval = 6 * 60 * 60
 
+    /// After real activity, keep counting as working this long with no new signal.
+    /// Overridable for `--probe-agents --latch=0` and tests. Production default is 2.5 minutes.
+    @ObservationIgnored var workingLatch: TimeInterval = AgentActivityRules.defaultWorkingLatch
+
     /// A process is identified by pid plus start time, so a reused pid is never mixed up.
     private struct ProcessKey: Hashable {
         let pid: pid_t
@@ -81,6 +90,8 @@ final class AgentMonitor {
     @ObservationIgnored private var trackedFiles: [String: Date] = [:]
     @ObservationIgnored private var argumentsCache: [ProcessKey: [String]] = [:]
     @ObservationIgnored private var lastActive: [ProcessKey: Date] = [:]
+    /// Last time a session showed real work (CPU, an active tool, or a log write). Used for latching.
+    @ObservationIgnored private var lastBusyAt: [ProcessKey: Date] = [:]
     @ObservationIgnored private lazy var watcher = FolderWatcher { [weak self] path in
         self?.noteWrite(at: path)
     }
@@ -98,6 +109,61 @@ final class AgentMonitor {
         trackRecentLogFiles()
         // The first check only takes a CPU baseline, so it never reports work
         DispatchQueue.main.async { [weak self] in self?.check() }
+    }
+
+    /// Prints what the monitor sees for `DoubleShot --probe-agents`.
+    /// Pass `watch: true` (or `--watch`) to keep checking and print only when status changes.
+    /// `interval` defaults to 2s for debugging; override with `--interval=5` (seconds).
+    /// `latch` overrides the working latch (`--latch=0` disables it for scenario tests).
+    static func probeAndExit(watch: Bool = false, interval: TimeInterval = 2, latch: TimeInterval? = nil) {
+        let interval = max(interval, 0.5)
+        let monitor = AgentMonitor()
+        if let latch { monitor.workingLatch = max(0, latch) }
+        monitor.trackRecentLogFiles()
+        monitor.check() // CPU baseline only
+        Thread.sleep(forTimeInterval: min(interval, 1.2))
+        monitor.check()
+        var previous = monitor.probeSnapshot()
+        print(Self.probeLine(previous, changed: false, latch: monitor.workingLatch))
+
+        guard watch else { exit(0) }
+
+        let label = interval == floor(interval) ? "\(Int(interval))s" : String(format: "%.1fs", interval)
+        let latchLabel = monitor.workingLatch == 0 ? "off" : String(format: "%.0fs", monitor.workingLatch)
+        print("Watching every \(label) (latch \(latchLabel)) — Ctrl+C to stop.")
+        fflush(stdout)
+        while true {
+            Thread.sleep(forTimeInterval: interval)
+            monitor.check()
+            let current = monitor.probeSnapshot()
+            guard current != previous else { continue }
+            previous = current
+            print(Self.probeLine(current, changed: true, latch: monitor.workingLatch))
+            fflush(stdout)
+        }
+    }
+
+    private struct ProbeSnapshot: Equatable {
+        var isAnyWorking: Bool
+        var lines: [String]
+    }
+
+    private func probeSnapshot() -> ProbeSnapshot {
+        let lines = running.map { status -> String in
+            let state = status.kind.countsUntilExit ? "running"
+                : status.backgroundRuns > 0 ? "background"
+                : status.isWorking ? "working" : "idle"
+            return "\(status.kind.name) sessions=\(status.sessions) background=\(status.backgroundRuns) \(state)"
+        }
+        return ProbeSnapshot(isAnyWorking: isAnyWorking, lines: lines)
+    }
+
+    private static func probeLine(_ snapshot: ProbeSnapshot, changed: Bool, latch: TimeInterval) -> String {
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        let prefix = changed ? "changed" : "status"
+        let agents = snapshot.lines.isEmpty ? "none" : snapshot.lines.joined(separator: "; ")
+        let latchNote = latch == 0 ? " latch=off" : ""
+        return "[\(stamp)] \(prefix) isAnyWorking=\(snapshot.isAnyWorking)\(latchNote) — \(agents)"
     }
 
     func stop() {
@@ -131,9 +197,24 @@ final class AgentMonitor {
         }
     }
 
-    private func logFolders(of kind: AgentKind) -> [String] {
+    private func resolvedHomePath(_ relative: String) -> String {
         // Resolved, because FSEvents reports real paths even when the folder is a symlink
-        kind.logFolders.map { URL(fileURLWithPath: "\(home)/\($0)").resolvingSymlinksInPath().path }
+        URL(fileURLWithPath: "\(home)/\(relative)").resolvingSymlinksInPath().path
+    }
+
+    private func logFolders(of kind: AgentKind) -> [String] {
+        var folders = kind.logFolders.map(resolvedHomePath(_:))
+        // Cursor IDE chats: ~/.cursor/projects/<workspace>/agent-transcripts
+        if let nested = kind.nestedLogFolderName {
+            for root in kind.nestedLogRoots.map(resolvedHomePath(_:)) {
+                guard let children = try? FileManager.default.contentsOfDirectory(atPath: root) else { continue }
+                for child in children where !child.hasPrefix(".") {
+                    let path = "\(root)/\(child)/\(nested)"
+                    if FileManager.default.fileExists(atPath: path) { folders.append(path) }
+                }
+            }
+        }
+        return folders
     }
 
     /// The agents whose session log this is, with the log folder it's in. Only session logs
@@ -150,8 +231,9 @@ final class AgentMonitor {
     private func noteWrite(at path: String) {
         let owners = owners(of: path)
         guard !owners.isEmpty else { return }
-        for owner in owners { recordWrite(of: owner.kind, folder: owner.folder, path: path, at: Date()) }
         trackedFiles[path] = Self.modificationDate(of: path) ?? Date()
+        guard Self.shouldCountLogActivity(at: path) else { return }
+        for owner in owners { recordWrite(of: owner.kind, folder: owner.folder, path: path, at: Date()) }
     }
 
     private func recordWrite(of kind: AgentKind, folder: String, path: String, at date: Date) {
@@ -159,6 +241,13 @@ final class AgentMonitor {
         if kind.logsPerProject, let project = path.dropFirst(folder.count + 1).split(separator: "/").first {
             lastProjectWrite[folder + "/" + project] = date
         }
+    }
+
+    /// Cursor agent-transcripts ending in `turn_ended` mean the run finished — not activity.
+    private static func shouldCountLogActivity(at path: String) -> Bool {
+        let lastLine = path.contains("/agent-transcripts/")
+            ? AgentActivityRules.lastNonEmptyLine(of: path) : nil
+        return AgentActivityRules.shouldCountLogWrite(path: path, lastLine: lastLine)
     }
 
     /// Writes FSEvents didn't report, to files that stay open.
@@ -172,6 +261,7 @@ final class AgentMonitor {
             }
             guard modified > seen else { continue }
             trackedFiles[path] = modified
+            guard Self.shouldCountLogActivity(at: path) else { continue }
             // When the file changed, not when we noticed (the first check after a wake can be late)
             for owner in owners(of: path) { recordWrite(of: owner.kind, folder: owner.folder, path: path, at: min(modified, now)) }
         }
@@ -221,12 +311,16 @@ final class AgentMonitor {
             return value
         }
 
+        // Process names that need argv for IDE helpers (Cursor sets argv[0] to the window title)
+        let argumentProbeNames = Set(kinds.flatMap(\.argumentProbeNames))
+
         // Find agent processes
         var rootsByKind: [String: [ProcessTable.Entry]] = [:]
         for entry in table.entries.values where entry.pid != ownPID {
             let isInterpreter = AgentKind.isInterpreter(entry.name)
+            let needsArgs = isInterpreter || argumentProbeNames.contains(entry.name)
             let path = isInterpreter ? nil : Self.executablePath(of: entry.pid)
-            let argv = isInterpreter ? arguments(entry) : nil
+            let argv = needsArgs ? arguments(entry) : nil
             for kind in kinds where kind.matches(name: entry.name, path: path, arguments: argv) {
                 if kind.isService(argv ?? arguments(entry)) { continue }
                 rootsByKind[kind.id, default: []].append(entry)
@@ -252,6 +346,7 @@ final class AgentMonitor {
 
             var anyBusy = false
             var anyWrote = false
+            var anyLatched = false
             var backgroundRuns = 0
             for session in sessions {
                 // MCP servers start with the session, browsers and language servers by name; a long
@@ -264,9 +359,23 @@ final class AgentMonitor {
                 }
                 let tree = table.tree(of: session.pid, skip: isHelper).compactMap { table.entries[$0] }
                 let cpu = tree.reduce(0) { $0 + used($1) }
+                // A bare shell is not enough: Cursor keeps an idle zsh host under agent-exec between
+                // commands (and sometimes after a turn). Count it only when the shell is using CPU
+                // or has a real child (python, sleep, docker, …).
                 let runningToolCall = tree.contains { entry in
-                    entry.pid != session.pid && Self.shellNames.contains(entry.name)
-                        && now.timeIntervalSince1970 - entry.startTime < Self.toolCallWindow
+                    guard entry.pid != session.pid, Self.shellNames.contains(entry.name),
+                          now.timeIntervalSince1970 - entry.startTime < Self.toolCallWindow else { return false }
+                    let shellTree = table.tree(of: entry.pid).compactMap { table.entries[$0] }
+                    let shellCPU = shellTree.reduce(0) { $0 + used($1) }
+                    let hasToolChild = shellTree.contains {
+                        $0.pid != entry.pid && !AgentActivityRules.shellNames.contains($0.name)
+                    }
+                    return AgentActivityRules.toolShellIsActive(
+                        shellCPUSeconds: shellCPU,
+                        elapsed: elapsed,
+                        busyCPUShare: Self.busyCPUShare,
+                        hasNonShellChild: hasToolChild
+                    )
                 }
                 let busy = cpu / elapsed >= Self.busyCPUShare || runningToolCall
                 anyBusy = anyBusy || busy
@@ -282,6 +391,11 @@ final class AgentMonitor {
                 let sessionKey = key(session)
                 let active = signOfLife ? now : (lastActive[sessionKey] ?? now)
                 liveActive[sessionKey] = active
+                if signOfLife { lastBusyAt[sessionKey] = now }
+                let latched = AgentActivityRules.isLatched(
+                    lastBusyAt: lastBusyAt[sessionKey], now: now, latch: workingLatch
+                )
+                anyLatched = anyLatched || latched
                 // An agent the user added has no logs to judge it by, and one waiting on its model barely
                 // uses CPU, so it counts until it exits
                 if kind.isBackgroundRun(arguments(session)),
@@ -289,8 +403,11 @@ final class AgentMonitor {
                     backgroundRuns += 1
                 }
             }
+            let wrote = sessions.isEmpty ? wroteLogs : anyWrote
             statuses.append(Status(kind: kind, sessions: max(sessions.count, 1), backgroundRuns: backgroundRuns,
-                                   isWorking: anyBusy || (sessions.isEmpty ? wroteLogs : anyWrote) || backgroundRuns > 0))
+                                   isWorking: AgentActivityRules.isWorking(
+                                    busy: anyBusy, latched: anyLatched, wroteLogs: wrote, backgroundRuns: backgroundRuns
+                                   )))
         }
 
         var cpuNow: [ProcessKey: Double] = [:]
@@ -299,6 +416,7 @@ final class AgentMonitor {
         lastCheckAt = now
         argumentsCache = liveArguments
         lastActive = liveActive
+        lastBusyAt = lastBusyAt.filter { liveActive.keys.contains($0.key) }
 
         let working = statuses.contains { $0.isWorking }
         if working { lastWorkingAt = now }

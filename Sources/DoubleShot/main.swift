@@ -90,6 +90,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+// `swift run DoubleShot --probe-agents` prints what the monitor sees, then exits.
+// Add `--watch` to keep checking (every 2s) and print only when status changes.
+// Optional: `--interval=5` watch period; `--latch=0` disables the working latch (scenario tests).
+if CommandLine.arguments.contains("--probe-agents") {
+    func flag(_ name: String) -> TimeInterval? {
+        CommandLine.arguments.compactMap { arg -> TimeInterval? in
+            guard arg.hasPrefix("--\(name)=") else { return nil }
+            return TimeInterval(arg.dropFirst("--\(name)=".count))
+        }.first
+    }
+    AgentMonitor.probeAndExit(
+        watch: CommandLine.arguments.contains("--watch"),
+        interval: flag("interval") ?? 2,
+        latch: flag("latch")
+    )
+}
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

@@ -18,7 +18,7 @@ You start a long Claude Code or Codex run, close the lid, put the Mac in your ba
 
 Double Shot handles both:
 
-- **Stays awake while your agents work.** It notices when Claude Code, Codex, Gemini CLI, Cursor Agent, Copilot CLI, OpenCode, Amp or Aider are actually working, not just open. Background runs like `claude -p` or `codex exec` count until they end. Built your own agent, with LangChain or a script? Add its name in Settings and it counts too. A few minutes after everything is quiet, your Mac sleeps like normal again. No setup, no hooks.
+- **Stays awake while your agents work.** It notices when Claude Code, Codex, Gemini CLI, Cursor (IDE chat, Agents window and CLI), Copilot CLI, OpenCode, Amp or Aider are actually working, not just open. Background runs like `claude -p` or `codex exec` count until they end. Built your own agent, with LangChain or a script? Add its name in Settings and it counts too. A few minutes after everything is quiet, your Mac sleeps like normal again. No setup, no hooks.
 - **Keeps going with the lid closed.** After a one-time admin password, close the lid and the work carries on, on battery too. When it's done, Double Shot puts the Mac to sleep for you.
 - **Looks after the Mac.** A closed Mac in a bag can't cool down, so Double Shot stops at the first warm level, turns the dark display fully off, switches on Low Power Mode on battery, and lets go when the battery gets low.
 
@@ -130,10 +130,11 @@ No hooks and nothing to set up per tool. Every 10 seconds Double Shot looks for 
 - A one-shot background run (`claude -p`, `codex exec`, `gemini -p` and the like) counts as working for as long as it runs, even while it waits on the model. If it shows no sign of life of its own for 20 minutes, it's treated as stuck.
 - Any other session counts as working when, since the last check, it used real CPU itself or through the tool calls it started, or a tool call it started is still running (up to 30 minutes). Its MCP servers, browsers and language servers are left out.
 - A session also counts as working for 90 seconds after its session log changes (`~/.claude/projects`, `~/.codex/sessions`, `~/.gemini/tmp` and so on, watched with FSEvents). Claude Code keeps one log folder per project, so each Claude session only counts its own writes. For the other agents a write counts for all their sessions.
+- After real activity, a short **working latch** (2.5 minutes) keeps the session marked working through quiet gaps (model waits between tool calls) so the status does not flap idle mid-run. The awake grace period still applies after that.
 
 A session sitting at the prompt, or waiting for you to approve something, does none of this, so it lets your Mac sleep. When everything has been quiet for the grace period (3 minutes by default), Double Shot lets go. Turning it off by hand during a run is respected until the agents go quiet.
 
-Cursor Agent means the `cursor-agent` command line tool. The agent inside the Cursor editor isn't detected.
+Cursor covers the IDE (chat and the Agents window) and the `cursor-agent` CLI. IDE sessions are the `extension-host (agent-exec)` helpers Cursor starts per window. An idle zsh host under those helpers does **not** count; only shells that are using CPU or have a real child tool do. Cursor's `agent-transcripts` files often flush a `turn_ended` line when a run stops — that write is ignored so status can return to idle. A quiet Cursor window still shows as open but idle, same as any other agent waiting at a prompt.
 
 ### Your own agents
 
@@ -163,7 +164,20 @@ cd double-shot
 scripts/build-app.sh          # builds dist/Double Shot.app (Apple Silicon + Intel) and a zip
 ```
 
-Quit the installed app before running a development build, since only one copy runs at a time. For quick runs: `swift run`. Logs:
+Quit the installed app before running a development build, since only one copy runs at a time. For quick runs: `swift run`. To see which agents the monitor matches right now (while a Cursor chat is running tools you should see `Cursor` as `working`):
+
+```sh
+swift run DoubleShot --probe-agents
+# keep checking every 2s; prints only when status changes (Ctrl+C to stop):
+swift run DoubleShot --probe-agents --watch
+# pick the interval, and/or disable the working latch while debugging:
+swift run DoubleShot --probe-agents --watch --interval=2 --latch=0
+# unit + live Cursor scenario suite:
+scripts/test-cursor-scenarios.sh
+swift test --filter AgentActivityRulesTests
+```
+
+Logs:
 
 ```sh
 log stream --predicate 'subsystem == "com.noahelhadedy.DoubleShot"'

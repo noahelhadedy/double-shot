@@ -12,6 +12,11 @@ struct AgentKind: Hashable, Sendable {
     var versionFolders: [String] = []
     /// Folders (relative to home) the agent writes its session logs to while it works.
     var logFolders: [String] = []
+    /// Container folders (relative to home) where each child may hold a nested session-log folder.
+    /// Cursor IDE: `~/.cursor/projects/<id>/agent-transcripts`.
+    var nestedLogRoots: [String] = []
+    /// Folder name under each child of `nestedLogRoots` that holds session logs.
+    var nestedLogFolderName: String? = nil
     /// Endings of the session log files in those folders.
     var logSuffixes: [String] = [".jsonl", ".json"]
     /// Logs go in one subfolder per working directory (Claude: ~/.claude/projects/-Users-me-app),
@@ -24,6 +29,10 @@ struct AgentKind: Hashable, Sendable {
     /// Runs that aren't a coding session at all (the Chrome bridge, `claude mcp serve`).
     var serviceFlags: Set<String> = []
     var serviceCommands: Set<String> = []
+    /// Substrings matched against argv (Cursor IDE sets argv[0] to its process title).
+    var argumentMarkers: [String] = []
+    /// Process names whose argv should be loaded so `argumentMarkers` can match.
+    var argumentProbeNames: Set<String> = []
     /// An agent the user added by name: it counts as working for as long as it runs.
     var countsUntilExit = false
 
@@ -45,13 +54,19 @@ struct AgentKind: Hashable, Sendable {
                   packages: ["/node_modules/@google/gemini-cli/"],
                   logFolders: [".gemini/tmp"],
                   backgroundFlags: ["-p", "--prompt"]),
-        // Runs as its own bundled node: .../cursor-agent/versions/<v>/node .../versions/<v>/index.js
-        AgentKind(id: "cursor", name: "Cursor Agent", executables: ["cursor-agent"],
+        // CLI: .../cursor-agent/versions/<v>/node .../index.js
+        // IDE chat / Agents: Cursor Helper (Plugin) titled "extension-host (agent-exec) ..."
+        // Private workers for the Agents window also run as cursor-agent (matched below).
+        AgentKind(id: "cursor", name: "Cursor", executables: ["cursor-agent"],
                   packages: ["/cursor-agent/versions/"],
                   versionFolders: ["/cursor-agent/versions/"],
                   logFolders: [".cursor/chats"],
+                  nestedLogRoots: [".cursor/projects"],
+                  nestedLogFolderName: "agent-transcripts",
                   logSuffixes: [".db", ".db-wal", ".jsonl", ".json"],
-                  backgroundFlags: ["-p", "--print"]),
+                  backgroundFlags: ["-p", "--print"],
+                  argumentMarkers: ["extension-host (agent-exec)"],
+                  argumentProbeNames: ["Cursor Helper (Plugin)"]),
         AgentKind(id: "copilot", name: "Copilot CLI", executables: ["copilot"],
                   packages: ["/node_modules/@github/copilot/"],
                   logFolders: [".copilot/session-state"],
@@ -92,12 +107,16 @@ struct AgentKind: Hashable, Sendable {
         interpreters.contains(executable) || executable.hasPrefix("python")
     }
 
-    /// `name` is the process name, `path` its binary, `arguments` its argv (needed for interpreters).
+    /// `name` is the process name, `path` its binary, `arguments` its argv (needed for interpreters and IDE helpers).
     func matches(name: String, path: String?, arguments: [String]?) -> Bool {
         if executables.contains(name) { return true }
         if let path {
             if executables.contains((path as NSString).lastPathComponent) { return true }
             if versionFolders.contains(where: { path.contains($0) }) { return true }
+        }
+        if let arguments, !argumentMarkers.isEmpty,
+           arguments.contains(where: { argument in argumentMarkers.contains { argument.contains($0) } }) {
+            return true
         }
         guard AgentKind.isInterpreter(name), let arguments else { return false }
         // argv[0] too: a node CLI that sets process.title shows up as just "claude".
@@ -134,10 +153,10 @@ struct AgentKind: Hashable, Sendable {
     }
 
     /// Not a coding session: a bridge or server the agent's binary also provides.
+    /// Subcommands can sit after options with values (`cursor-agent --api-key … worker start`).
     func isService(_ arguments: [String]) -> Bool {
         let own = ownArguments(arguments)
         if own.contains(where: serviceFlags.contains) { return true }
-        guard let command = own.first(where: { !$0.hasPrefix("-") }) else { return false }
-        return serviceCommands.contains(command)
+        return own.contains(where: serviceCommands.contains)
     }
 }
