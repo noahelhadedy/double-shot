@@ -195,7 +195,7 @@ struct AgentSettingsView: View {
                 }
                 .disabled(!prefs.agentMode)
             } footer: {
-                Text("No setup needed. Double Shot watches for agents that are actually working, not just open. A background run (claude -p, codex exec) counts until it ends. With lid closed mode on, they keep going with the lid shut too.")
+                Text("No setup needed. Double Shot watches for agents that are actually working, not just open. A background run (claude -p, codex exec, muse exec) counts until it ends. With lid closed mode on, they keep going with the lid shut too.")
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)

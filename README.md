@@ -18,7 +18,7 @@ You start a long Claude Code or Codex run, close the lid, put the Mac in your ba
 
 Double Shot handles both:
 
-- **Stays awake while your agents work.** It notices when Claude Code, Codex, Gemini CLI, Cursor Agent, Copilot CLI, OpenCode, Amp or Aider are actually working, not just open. Background runs like `claude -p` or `codex exec` count until they end. Built your own agent, with LangChain or a script? Add its name in Settings and it counts too. A few minutes after everything is quiet, your Mac sleeps like normal again. No setup, no hooks.
+- **Stays awake while your agents work.** It notices when Claude Code, Codex, Gemini CLI, Cursor Agent, Copilot CLI, OpenCode, Amp, Aider or Muse Code are actually working, not just open. Background runs like `claude -p`, `codex exec` or `muse exec` count until they end. Built your own agent, with LangChain or a script? Add its name in Settings and it counts too. A few minutes after everything is quiet, your Mac sleeps like normal again. No setup, no hooks.
 - **Keeps going with the lid closed.** After a one-time admin password, close the lid and the work carries on, on battery too. When it's done, Double Shot puts the Mac to sleep for you.
 - **Looks after the Mac.** A closed Mac in a bag can't cool down, so Double Shot stops at the first warm level, turns the dark display fully off, switches on Low Power Mode on battery, and lets go when the battery gets low.
 
@@ -127,7 +127,7 @@ defaults delete com.noahelhadedy.DoubleShot
 
 No hooks and nothing to set up per tool. Every 10 seconds Double Shot looks for known agent processes and judges each session on its own:
 
-- A one-shot background run (`claude -p`, `codex exec`, `gemini -p` and the like) counts as working for as long as it runs, even while it waits on the model. If it shows no sign of life of its own for 20 minutes, it's treated as stuck.
+- A one-shot background run (`claude -p`, `codex exec`, `muse exec`, `gemini -p` and the like) counts as working for as long as it runs, even while it waits on the model. If it shows no sign of life of its own for 20 minutes, it's treated as stuck.
 - Any other session counts as working when, since the last check, it used real CPU itself or through the tool calls it started, or a tool call it started is still running (up to 30 minutes). Its MCP servers, browsers and language servers are left out.
 - A session also counts as working for 90 seconds after its session log changes (`~/.claude/projects`, `~/.codex/sessions`, `~/.gemini/tmp` and so on, watched with FSEvents). Claude Code keeps one log folder per project, so each Claude session only counts its own writes. For the other agents a write counts for all their sessions.
 

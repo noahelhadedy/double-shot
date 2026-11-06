@@ -5,7 +5,7 @@ import Observation
 /// Agents the user added by name in Settings count for as long as they run.
 ///
 /// A session counts as working when:
-/// - it's a one-shot background run (`claude -p`, `codex exec`) that showed any sign of life in
+/// - it's a one-shot background run (`claude -p`, `codex exec`, `muse exec`) that showed any sign of life in
 ///   the last 20 minutes, since such a run works until it exits, or
 /// - in the last check it used real CPU itself or through the tool calls it started, or
 /// - it wrote its session log in the last 90 seconds (Claude Code logs per working directory,
