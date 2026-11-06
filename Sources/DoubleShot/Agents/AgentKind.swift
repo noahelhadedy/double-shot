@@ -6,6 +6,9 @@ struct AgentKind: Hashable, Sendable {
     let name: String
     /// Binary names, matched exactly against the process name or the last path component.
     let executables: Set<String>
+    /// Binary name prefixes, matched against the start of the process name or the last path component.
+    /// For launchers that start a versioned binary next to them (`muse` runs `muse-bin-<version>`).
+    var executablePrefixes: Set<String> = []
     /// Install folders for agents that run inside node, bun or python, matched in the script path.
     var packages: [String] = []
     /// Folders whose binaries are named after a version (Claude's native installer: .../claude/versions/2.1.3).
@@ -65,6 +68,12 @@ struct AgentKind: Hashable, Sendable {
                   backgroundFlags: ["-x", "--execute"]),
         AgentKind(id: "aider", name: "Aider", executables: ["aider"],
                   backgroundFlags: ["-m", "--message", "--message-file"]),
+        // The launcher (`muse`) runs a versioned binary next to it (`muse-bin-<version>`)
+        AgentKind(id: "muse", name: "Muse Code", executables: ["muse"],
+                  executablePrefixes: ["muse-bin-"],
+                  logFolders: [".local/share/muse/sessions"],
+                  logSuffixes: ["session.jsonl"],
+                  backgroundCommands: ["exec"]),
     ]
 
     /// Script endings tried when the user types a name without one (`my_agent` finds `python my_agent.py`).
@@ -78,7 +87,7 @@ struct AgentKind: Hashable, Sendable {
         guard let last = typed.split(whereSeparator: \.isWhitespace).last else { return nil }
         let name = (String(last).trimmingCharacters(in: CharacterSet(charactersIn: "\"'")) as NSString).lastPathComponent
         guard !name.isEmpty, !isInterpreter(name), !shells.contains(name),
-              !all.contains(where: { $0.executables.contains(name) }) else { return nil }
+              !all.contains(where: { $0.executables.contains(name) || $0.executablePrefixes.contains(where: name.hasPrefix) }) else { return nil }
         var executables: Set<String> = [name]
         if (name as NSString).pathExtension.isEmpty {
             for ending in scriptEndings { executables.insert("\(name).\(ending)") }
@@ -95,8 +104,11 @@ struct AgentKind: Hashable, Sendable {
     /// `name` is the process name, `path` its binary, `arguments` its argv (needed for interpreters).
     func matches(name: String, path: String?, arguments: [String]?) -> Bool {
         if executables.contains(name) { return true }
+        if executablePrefixes.contains(where: { name.hasPrefix($0) }) { return true }
         if let path {
-            if executables.contains((path as NSString).lastPathComponent) { return true }
+            let leaf = (path as NSString).lastPathComponent
+            if executables.contains(leaf) { return true }
+            if executablePrefixes.contains(where: { leaf.hasPrefix($0) }) { return true }
             if versionFolders.contains(where: { path.contains($0) }) { return true }
         }
         guard AgentKind.isInterpreter(name), let arguments else { return false }
