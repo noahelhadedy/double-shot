@@ -56,9 +56,13 @@ struct AgentKind: Hashable, Sendable {
                   packages: ["/node_modules/@github/copilot/"],
                   logFolders: [".copilot/session-state"],
                   backgroundFlags: ["-p", "--prompt"]),
+        // The desktop app bundles its own CLI in a versioned folder and runs one server for all
+        // its sessions: .../ai.opencode.desktop/cli/2.2.7-arm64/opencode-cli serve --service
         AgentKind(id: "opencode", name: "OpenCode", executables: ["opencode"],
                   packages: ["/node_modules/opencode-ai/"],
+                  versionFolders: ["/ai.opencode.desktop/cli/"],
                   logFolders: [".local/share/opencode"],
+                  logSuffixes: [".jsonl", ".json", ".db", ".db-wal"],
                   backgroundCommands: ["run"]),
         AgentKind(id: "amp", name: "Amp", executables: ["amp"],
                   packages: ["/node_modules/@sourcegraph/amp/"],
