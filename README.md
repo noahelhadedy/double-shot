@@ -135,6 +135,8 @@ A session sitting at the prompt, or waiting for you to approve something, does n
 
 Cursor Agent means the `cursor-agent` command line tool. The agent inside the Cursor editor isn't detected.
 
+OpenCode means the `opencode` command line tool and the OpenCode desktop app. The app runs one server for all its sessions, so they count as a single session, and it keeps them in `~/.local/share/opencode/opencode.db`, which is what Double Shot watches for activity.
+
 ### Your own agents
 
 Built your own agent, with LangChain or a plain script? Add its script or command name in Settings > AI Agents > Your own agents, like `my_agent.py` or just `my_agent`. Double Shot finds it however it's started (`python my_agent.py`, `uv run my_agent.py`, `node my_agent.js`, `python -m my_agent`, or a binary with that name) and keeps the Mac awake for as long as it runs, lid closed too. These agents keep no logs Double Shot could read, and one waiting on its model barely uses CPU, so they count until they exit instead of going by activity.
